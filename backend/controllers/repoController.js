@@ -32,6 +32,18 @@ export const analyzeRepo = async (req, res) => {
       githubService.getRepoCommits(owner, repoName, 300)
     ]);
 
+    // Detailed analysis via cloning
+    let commitHistory = [];
+    try {
+      const tempPath = await githubService.cloneRepo(repoUrl);
+      const detailed = await githubService.getDetailedGitStats(tempPath);
+      commitHistory = detailed.commitHistory;
+      // Clean up
+      fs.rmSync(tempPath, { recursive: true, force: true });
+    } catch (cloneError) {
+      console.error('Cloning/Detailed analysis failed:', cloneError);
+    }
+
     // Process stats
     let totalCommits = totalCommitsCount;
     let totalAdditions = 0;
@@ -92,7 +104,8 @@ export const analyzeRepo = async (req, res) => {
           refactors: refactors
         },
         contributors: contributors,
-        timeline: timeline
+        timeline: timeline,
+        commitHistory: commitHistory
       }
     });
   } catch (error) {

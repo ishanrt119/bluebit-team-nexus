@@ -2,11 +2,10 @@ import React from 'react';
 
 const AnalyticsTabs = ({ activeTab, onTabChange }) => {
   const tabs = [
-    { id: 'analytics', label: 'Analytics' },
-    { id: 'contributors', label: 'Contributor Graph' },
-    { id: 'preview', label: 'Project Preview' },
-    { id: 'assistant', label: 'Repository Assistant' },
-    { id: 'explorer', label: 'Directory Explorer' }
+    { id: 'analytics', label: 'Overview' },
+    { id: 'contributors', label: 'Contributors' },
+    { id: 'complexity', label: 'Complexity' },
+    { id: 'heatmap', label: 'Heatmap' },
   ];
 
   return (

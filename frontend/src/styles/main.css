@@ -1,5 +1,5 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
@@ -794,6 +794,85 @@
 
 .tooltip-value span {
   color: #10b981;
+}
+
+/* Time Scrubber */
+.time-scrubber-container {
+  background-color: #0f172a;
+  border: 1px solid #1e293b;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.time-scrubber-container input[type="range"] {
+  -webkit-appearance: none;
+  background: #1e293b;
+  height: 6px;
+  border-radius: 3px;
+}
+
+.time-scrubber-container input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  background: #10b981;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+}
+
+/* File Details Panel */
+.file-details-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.file-details-panel .detail-item {
+  background-color: rgba(15, 23, 42, 0.5);
+  border: 1px solid #1e293b;
+  padding: 1rem;
+  border-radius: 12px;
+}
+
+/* Chart Container Overrides */
+.chart-card {
+  background-color: #0f172a;
+  border: 1px solid #1e293b;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.chart-card:hover {
+  border-color: #10b981;
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.05);
+}
+
+/* Scrollbar for hotspots */
+.chart-wrapper::-webkit-scrollbar {
+  width: 4px;
+}
+
+.chart-wrapper::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chart-wrapper::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 2px;
+}
+
+.chart-wrapper::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}
+
+/* Responsive adjustments */
+@media (max-width: 1024px) {
+  .charts-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .chart-card.large {
+    grid-column: span 1;
+  }
 }
 
 .chart-container {

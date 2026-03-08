@@ -4,6 +4,7 @@ import TimelineChart from './charts/TimelineChart';
 import DonutChart from './charts/DonutChart';
 import HourlyChart from './charts/HourlyChart';
 import WeeklyChart from './charts/WeeklyChart';
+import MonthlyChart from './charts/MonthlyChart';
 
 const COLORS = ['#10b981', '#38bdf8', '#8b5cf6', '#f59e0b', '#ef4444', '#ec4899', '#06b6d4', '#f97316'];
 
@@ -21,7 +22,7 @@ const ContributorGraph = ({ timeline, contributors }) => {
 
   // Process data for charts
   const chartData = useMemo(() => {
-    if (!timeline || timeline.length === 0) return { timeline: [], hourly: [], daily: [], pie: [] };
+    if (!timeline || timeline.length === 0) return { timeline: [], hourly: [], daily: [], monthly: [], pie: [] };
 
     const filteredTimeline = selectedAuthors.length > 0 
       ? timeline.filter(c => selectedAuthors.includes(c.login || c.author))
@@ -60,7 +61,19 @@ const ContributorGraph = ({ timeline, contributors }) => {
       count
     }));
 
-    // 4. Pie Chart Data (Contribution %)
+    // 4. Monthly Activity
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const monthlyMap = Array(12).fill(0);
+    filteredTimeline.forEach(commit => {
+      const month = new Date(commit.date).getMonth();
+      monthlyMap[month]++;
+    });
+    const monthlyData = monthlyMap.map((count, month) => ({
+      month: months[month],
+      count
+    }));
+
+    // 5. Pie Chart Data (Contribution %)
     const authorCommits = {};
     timeline.forEach(commit => {
       const author = commit.login || commit.author;
@@ -70,7 +83,7 @@ const ContributorGraph = ({ timeline, contributors }) => {
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value);
 
-    return { timeline: timelineData, hourly: hourlyData, daily: dailyData, pie: pieData };
+    return { timeline: timelineData, hourly: hourlyData, daily: dailyData, monthly: monthlyData, pie: pieData };
   }, [timeline, selectedAuthors]);
 
   const toggleAuthor = (author) => {
@@ -168,6 +181,20 @@ const ContributorGraph = ({ timeline, contributors }) => {
           </div>
           <div className="chart-wrapper">
             <WeeklyChart data={chartData.daily} />
+          </div>
+        </div>
+
+        {/* Monthly Activity */}
+        <div className="chart-card">
+          <div className="chart-header">
+            <Calendar className="chart-icon" />
+            <div>
+              <h4>Monthly Trends</h4>
+              <p>Seasonal activity patterns</p>
+            </div>
+          </div>
+          <div className="chart-wrapper">
+            <MonthlyChart data={chartData.monthly} />
           </div>
         </div>
       </div>
