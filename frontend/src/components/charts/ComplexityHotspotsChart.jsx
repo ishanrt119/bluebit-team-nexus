@@ -8,7 +8,11 @@ const ComplexityHotspotsChart = ({ data, onFileClick }) => {
   useEffect(() => {
     if (!data || data.length === 0) return;
 
-    const chartData = data.filter(d => d.path && typeof d.count === 'number').slice(0, 10);
+    const arrayData = Array.isArray(data) ? data : data?.commitHistory || [];
+
+const chartData = arrayData
+  .filter(d => d.path && typeof d.count === "number")
+  .slice(0, 10);
     if (chartData.length === 0) return;
     
     const margin = { top: 10, right: 40, bottom: 20, left: 120 };
