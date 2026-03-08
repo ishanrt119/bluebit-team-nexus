@@ -3,7 +3,11 @@ import { createServer as createViteServer } from "vite";
 import cors from "cors";
 import path from "path";
 import { fileURLToPath } from "url";
+import dotenv from "dotenv";
 
+dotenv.config();
+
+console.log("TOKEN:", process.env.GITHUB_TOKEN);
 // Routes
 import repoRoutes from "./routes/repoRoutes.js";
 

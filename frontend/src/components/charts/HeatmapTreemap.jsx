@@ -104,6 +104,7 @@ const HeatmapTreemap = ({ data, onFileClick }) => {
     legend.append("text")
       .attr("x", 0)
       .attr("y", -5)
+    
       .attr("fill", "#94a3b8")
       .style("font-size", "10px")
       .style("font-weight", "600")
@@ -145,6 +146,7 @@ const HeatmapTreemap = ({ data, onFileClick }) => {
     leaf.append("text")
       .attr("x", 5)
       .attr("y", 15)
+      .attr("fill", "black")
       .attr("fill", "#0f172a")
       .style("font-weight", "500")
       .style("font-size", "10px")

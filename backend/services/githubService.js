@@ -8,10 +8,47 @@ import axios from 'axios';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Simple in-memory cache
+const cache = new Map();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+const getHeaders = () => {
+  const headers = {
+    'Accept': 'application/vnd.github+json'
+  };
+  if (process.env.GITHUB_TOKEN) {
+    headers['Authorization'] = `Bearer ${process.env.GITHUB_TOKEN}`;
+  }
+  return headers;
+};
+
+const fetchWithCache = async (url, options = {}) => {
+  const cacheKey = url;
+  const cached = cache.get(cacheKey);
+  
+  if (cached && (Date.now() - cached.timestamp < CACHE_TTL)) {
+    console.log(`Serving from cache: ${url}`);
+    return cached.data;
+  }
+
+  const response = await axios.get(url, {
+    ...options,
+    headers: { ...getHeaders(), ...options.headers }
+  });
+
+  cache.set(cacheKey, {
+    data: response,
+    timestamp: Date.now()
+  });
+
+  return response;
+};
+
 export const getRepoMetadata = async (owner, repo) => {
   try {
-    const response = await axios.get(`https://api.github.com/repos/${owner}/${repo}`);
+    const response = await fetchWithCache(`https://api.github.com/repos/${owner}/${repo}`);
     const data = response.data;
+
     return {
       name: data.name,
       description: data.description,
@@ -27,8 +64,10 @@ export const getRepoMetadata = async (owner, repo) => {
         html_url: data.owner.html_url
       }
     };
+
   } catch (error) {
-    throw new Error('Failed to fetch metadata from GitHub API');
+    console.error("GitHub API ERROR:", error.response?.data || error.message);
+    throw new Error(`GitHub API failed: ${error.response?.status}`);
   }
 };
 
@@ -40,7 +79,9 @@ export const getRepoStats = async (owner, repo) => {
     let retries = 3;
     
     while (retries > 0) {
-      response = await axios.get(`https://api.github.com/repos/${owner}/${repo}/stats/contributors`);
+      response = await axios.get(`https://api.github.com/repos/${owner}/${repo}/stats/contributors`, {
+        headers: getHeaders()
+      });
       if (response.status === 200) break;
       if (response.status === 202) {
         console.log(`Stats for ${owner}/${repo} are being computed, retrying in 2 seconds...`);
@@ -61,7 +102,7 @@ export const getRepoStats = async (owner, repo) => {
 export const getTotalCommits = async (owner, repo) => {
   try {
     // Trick to get total commit count: fetch 1 commit and check the 'Link' header
-    const response = await axios.get(`https://api.github.com/repos/${owner}/${repo}/commits?per_page=1`);
+    const response = await fetchWithCache(`https://api.github.com/repos/${owner}/${repo}/commits?per_page=1`);
     const linkHeader = response.headers.link;
     
     if (!linkHeader) return 1;
@@ -87,7 +128,7 @@ export const getRepoCommits = async (owner, repo, limit = 100) => {
     let allCommits = [];
     
     for (let i = 1; i <= pages; i++) {
-      const response = await axios.get(`https://api.github.com/repos/${owner}/${repo}/commits?per_page=${perPage}&page=${i}`);
+      const response = await fetchWithCache(`https://api.github.com/repos/${owner}/${repo}/commits?per_page=${perPage}&page=${i}`);
       allCommits = allCommits.concat(response.data);
       if (response.data.length < perPage) break;
     }
