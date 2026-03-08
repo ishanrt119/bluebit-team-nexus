@@ -32,6 +32,28 @@ export const getRepoMetadata = async (owner, repo) => {
   }
 };
 
+export const getRepoStats = async (owner, repo) => {
+  try {
+    // This endpoint returns a list of contributors with their weekly stats
+    const response = await axios.get(`https://api.github.com/repos/${owner}/${repo}/stats/contributors`);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching stats:', error);
+    return [];
+  }
+};
+
+export const getRepoCommits = async (owner, repo) => {
+  try {
+    // Fetch last 100 commits
+    const response = await axios.get(`https://api.github.com/repos/${owner}/${repo}/commits?per_page=100`);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching commits:', error);
+    return [];
+  }
+};
+
 export const cloneRepo = async (repoUrl) => {
   const repoName = repoUrl.split('/').pop().replace('.git', '');
   const tempDir = path.join(os.tmpdir(), `git-history-${Date.now()}-${repoName}`);

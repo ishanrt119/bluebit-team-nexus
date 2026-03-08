@@ -25,9 +25,65 @@ export const analyzeRepo = async (req, res) => {
     // Fetch metadata
     const metadata = await githubService.getRepoMetadata(owner, repoName);
     
+    // Fetch stats and commits
+    const stats = await githubService.getRepoStats(owner, repoName);
+    const commits = await githubService.getRepoCommits(owner, repoName);
+
+    // Process stats
+    let totalCommits = 0;
+    let totalAdditions = 0;
+    let totalDeletions = 0;
+    const contributors = [];
+
+    if (Array.isArray(stats)) {
+      stats.forEach(contributor => {
+        totalCommits += contributor.total;
+        contributor.weeks.forEach(week => {
+          totalAdditions += week.a;
+          totalDeletions += week.d;
+        });
+        contributors.push({
+          login: contributor.author.login,
+          avatar: contributor.author.avatar_url,
+          commits: contributor.total,
+          additions: contributor.weeks.reduce((sum, w) => sum + w.a, 0),
+          deletions: contributor.weeks.reduce((sum, w) => sum + w.d, 0)
+        });
+      });
+    }
+
+    // Process commits for timeline and refactors
+    const timeline = commits.map(c => ({
+      author: c.commit.author.name,
+      login: c.author?.login || c.commit.author.name,
+      message: c.commit.message,
+      date: c.commit.author.date,
+      sha: c.sha
+    }));
+
+    const refactors = timeline.filter(c => 
+      c.message.toLowerCase().includes('refactor') || 
+      c.message.toLowerCase().includes('cleanup') ||
+      c.message.toLowerCase().includes('clean up')
+    ).length;
+
+    // Calculate churn rate: (additions + deletions) / total_commits (as a simple volatility metric)
+    // Or more accurately if we had total lines, but let's use a normalized value for display
+    const churnRate = totalCommits > 0 ? ((totalAdditions + totalDeletions) / (totalCommits * 100)).toFixed(1) : 0;
+
     res.json({
       status: 'success',
-      data: metadata
+      data: {
+        ...metadata,
+        analytics: {
+          commits: totalCommits || timeline.length,
+          contributors: contributors.length || new Set(timeline.map(c => c.author)).size,
+          churnRate: Math.min(parseFloat(churnRate), 100), // Cap at 100 for display
+          refactors: refactors
+        },
+        contributors: contributors,
+        timeline: timeline
+      }
     });
   } catch (error) {
     console.error('Analysis error:', error);
