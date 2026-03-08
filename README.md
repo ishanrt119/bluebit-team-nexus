@@ -446,6 +446,3 @@ If you found this project useful:
 
 💻 Built with passion for **data visualization and developer productivity.**
 
----
-
-If you want, I can also show you **3 tricks used in viral GitHub repos** to make your README look **10× more impressive (with animated banners, GIF previews, and live demo buttons)**.
