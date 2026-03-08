@@ -17,13 +17,17 @@ export const analyzeRepo = async (req, res) => {
   try {
     console.log(`Analyzing repository: ${repoUrl}`);
     
-    const repoPath = await githubService.cloneRepo(repoUrl);
-    
-    const analysis = await gitParser.parseGitLog(repoPath);
+    // Extract owner and repoName
+    const parts = repoUrl.replace(/\/$/, "").split("/");
+    const repoName = parts.pop();
+    const owner = parts.pop();
+
+    // Fetch metadata
+    const metadata = await githubService.getRepoMetadata(owner, repoName);
     
     res.json({
       status: 'success',
-      data: analysis
+      data: metadata
     });
   } catch (error) {
     console.error('Analysis error:', error);
