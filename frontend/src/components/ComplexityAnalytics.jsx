@@ -4,6 +4,7 @@ import ComplexityTrendChart from './charts/ComplexityTrendChart';
 import ComplexityHotspotsChart from './charts/ComplexityHotspotsChart';
 
 const ComplexityAnalytics = ({ fileActivity, complexityTrend, onFileClick }) => {
+  console.log('ComplexityAnalytics props:', { fileActivity, complexityTrend });
   const stats = useMemo(() => {
     if (!complexityTrend || complexityTrend.length === 0) return { totalAdditions: 0, totalDeletions: 0, avgFiles: 0 };
     
@@ -73,7 +74,7 @@ const ComplexityAnalytics = ({ fileActivity, complexityTrend, onFileClick }) => 
 
       <div className="charts-grid">
         {/* Complexity Trend */}
-        <div className="chart-card large">
+        <div className="chart-card large min-h-[350px]">
           <div className="chart-header">
             <BarChart3 className="chart-icon" />
             <div>
@@ -87,7 +88,7 @@ const ComplexityAnalytics = ({ fileActivity, complexityTrend, onFileClick }) => 
         </div>
 
         {/* Hotspots */}
-        <div className="chart-card">
+        <div className="chart-card min-h-[350px]">
           <div className="chart-header">
             <Activity className="chart-icon" />
             <div>

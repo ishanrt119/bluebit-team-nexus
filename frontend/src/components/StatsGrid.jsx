@@ -16,7 +16,7 @@ const StatsGrid = ({ data }) => {
   };
 
   const getChurnBadge = (val) => {
-    if (val > 50) return { label: 'HIGH VOLATILITY', type: 'red' };
+    if (val > 50) return { label: 'CHANGING VERY FAST', type: 'red' };
     if (val > 20) return { label: 'STEADY CHANGES', type: 'blue' };
     return { label: 'STABLE', type: 'green' };
   };
@@ -39,7 +39,7 @@ const StatsGrid = ({ data }) => {
       value: data.commits,
       badge: commitInfo.label,
       badgeType: commitInfo.type,
-      description: data.commits > 100 ? 'A mature project with a significant history of development.' : 'This project is relatively new or has a focused commit history.',
+      description: data.commits > 100 ? 'A mature project with a significant history of development.' : 'This project is brand new and just getting its first few pieces of code.',
       delay: 100
     },
     {
@@ -48,7 +48,7 @@ const StatsGrid = ({ data }) => {
       value: data.contributors,
       badge: contributorInfo.label,
       badgeType: contributorInfo.type,
-      description: data.contributors > 10 ? 'Many developers are collaborating on this codebase.' : 'A small, tight-knit group is driving this project forward.',
+      description: data.contributors > 10 ? 'Many developers are collaborating on this codebase.' : 'A few friends or teammates are working on this together.',
       delay: 200
     },
     {
@@ -57,7 +57,7 @@ const StatsGrid = ({ data }) => {
       value: `${data.churnRate}%`,
       badge: churnInfo.label,
       badgeType: churnInfo.type,
-      description: data.churnRate > 30 ? 'The code is changing rapidly, indicating high development activity.' : 'The codebase is stable with incremental changes over time.',
+      description: data.churnRate > 30 ? 'The code is being rewritten a lot, which might mean big changes are happening.' : 'The codebase is stable with incremental changes over time.',
       delay: 300
     },
     {
@@ -66,7 +66,7 @@ const StatsGrid = ({ data }) => {
       value: data.refactors,
       badge: refactorInfo.label,
       badgeType: refactorInfo.type,
-      description: data.refactors > 10 ? 'Frequent architectural improvements and code cleanups.' : 'The code structure has remained consistent with few major refactors.',
+      description: data.refactors > 10 ? 'Frequent architectural improvements and code cleanups.' : 'The code structure has stayed the same since it started.',
       delay: 400
     }
   ];

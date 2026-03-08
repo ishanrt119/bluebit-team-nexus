@@ -19,6 +19,7 @@
     "better-sqlite3": "^12.4.1",
     "cors": "^2.8.6",
     "d3": "^7.9.0",
+    "dagre": "^0.8.5",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "lucide-react": "^0.546.0",
@@ -26,7 +27,9 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.13.1",
+    "reactflow": "^11.11.4",
     "simple-git": "^3.32.3",
+    "three": "^0.183.2",
     "vite": "^6.2.0"
   },
   "devDependencies": {

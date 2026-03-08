@@ -13,13 +13,9 @@ const cache = new Map();
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 const getHeaders = () => {
-  const headers = {
+  return {
     'Accept': 'application/vnd.github+json'
   };
-  if (process.env.GITHUB_TOKEN) {
-    headers['Authorization'] = `Bearer ${process.env.GITHUB_TOKEN}`;
-  }
-  return headers;
 };
 
 const fetchWithCache = async (url, options = {}) => {
@@ -46,9 +42,9 @@ const fetchWithCache = async (url, options = {}) => {
 
 export const getRepoMetadata = async (owner, repo) => {
   try {
-    const response = await fetchWithCache(`https://api.github.com/repos/${owner}/${repo}`);
+    const cleanRepo = repo.replace(/\.git$/, '');
+    const response = await fetchWithCache(`https://api.github.com/repos/${owner}/${cleanRepo}`);
     const data = response.data;
-
     return {
       name: data.name,
       description: data.description,
@@ -64,10 +60,18 @@ export const getRepoMetadata = async (owner, repo) => {
         html_url: data.owner.html_url
       }
     };
-
   } catch (error) {
-    console.error("GitHub API ERROR:", error.response?.data || error.message);
-    throw new Error(`GitHub API failed: ${error.response?.status}`);
+    const status = error.response?.status;
+    const message = error.response?.data?.message || error.message;
+    console.error(`GitHub API Error (${status}): ${message}`);
+    
+    if (status === 404) {
+      throw new Error('Repository not found. Please check the URL.');
+    } else if (status === 403 && message.includes('rate limit')) {
+      throw new Error('GitHub API rate limit exceeded. Please try again later or use a smaller repository.');
+    }
+    
+    throw new Error(`Failed to fetch metadata from GitHub API: ${message}`);
   }
 };
 
@@ -216,5 +220,56 @@ export const getDetailedGitStats = async (repoPath) => {
   } catch (error) {
     console.error('Error in detailed git stats:', error);
     return { commitHistory: [] };
+  }
+};
+
+export const getCommitDiff = async (repoUrl, hash, filePath) => {
+  const repoName = repoUrl.split('/').pop().replace('.git', '');
+  const tempDir = path.join(os.tmpdir(), `git-diff-${Date.now()}-${repoName}`);
+  
+  try {
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+
+    const git = simpleGit();
+    await git.clone(repoUrl, tempDir, ['--depth', '50']); // Shallow clone for speed
+    const localGit = simpleGit(tempDir);
+    
+    const diff = await localGit.show([hash, '--', filePath]);
+    
+    // Parse diff
+    const lines = diff.split('\n');
+    const diffLines = [];
+    let additions = 0;
+    let deletions = 0;
+    
+    let startParsing = false;
+    for (const line of lines) {
+      if (line.startsWith('@@')) {
+        startParsing = true;
+        continue;
+      }
+      if (!startParsing) continue;
+      
+      if (line.startsWith('+') && !line.startsWith('+++')) {
+        additions++;
+        diffLines.push(line);
+      } else if (line.startsWith('-') && !line.startsWith('---')) {
+        deletions++;
+        diffLines.push(line);
+      } else if (!line.startsWith('\\')) {
+        diffLines.push(line);
+      }
+    }
+
+    // Clean up
+    fs.rmSync(tempDir, { recursive: true, force: true });
+    
+    return { lines: diffLines.slice(0, 50), additions, deletions }; // Limit to 50 lines for preview
+  } catch (error) {
+    console.error('Error getting diff:', error);
+    if (fs.existsSync(tempDir)) fs.rmSync(tempDir, { recursive: true, force: true });
+    return { lines: ['Error loading diff'], additions: 0, deletions: 0 };
   }
 };

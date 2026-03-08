@@ -7,7 +7,6 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-console.log("TOKEN:", process.env.GITHUB_TOKEN);
 // Routes
 import repoRoutes from "./routes/repoRoutes.js";
 

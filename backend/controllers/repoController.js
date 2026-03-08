@@ -113,3 +113,68 @@ export const analyzeRepo = async (req, res) => {
     res.status(500).json({ status: 'error', message: 'Failed to analyze repository: ' + error.message });
   }
 };
+
+export const analyzeRepoStream = async (req, res) => {
+  const { repoUrl } = req.query;
+
+  if (!repoUrl) {
+    return res.status(400).json({ status: "error", message: "Repository URL is required" });
+  }
+
+  const githubRegex = /^https?:\/\/(www\.)?github\.com\/[\w-]+\/[\w.-]+\/?$/;
+  if (!githubRegex.test(repoUrl.replace(/\.git$/, ""))) {
+    return res.status(400).json({ status: "error", message: "Invalid GitHub Repository URL" });
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  const sendEvent = (event, data) => {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+
+  try {
+    const cleanUrl = repoUrl.replace(/\/$/, "").replace(/\.git$/, "");
+    const parts = cleanUrl.split("/");
+    const repoName = parts.pop();
+    const owner = parts.pop();
+
+    sendEvent('status', { message: 'Fetching metadata...' });
+    const metadata = await githubService.getRepoMetadata(owner, repoName);
+    sendEvent('metadata', metadata);
+
+    sendEvent('status', { message: 'Cloning repository for detailed analysis...' });
+    const tempPath = await githubService.cloneRepo(repoUrl);
+    
+    sendEvent('status', { message: 'Parsing commit history...' });
+    const detailed = await githubService.getDetailedGitStats(tempPath);
+    
+    sendEvent('history', detailed.commitHistory);
+    sendEvent('status', { message: 'Analysis complete!' });
+    sendEvent('done', { success: true });
+
+    // Clean up
+    fs.rmSync(tempPath, { recursive: true, force: true });
+    res.end();
+  } catch (error) {
+    console.error('Streaming analysis error:', error);
+    sendEvent('error', { message: error.message });
+    res.end();
+  }
+};
+
+export const getCommitDiff = async (req, res) => {
+  const { repoUrl, hash, filePath } = req.query;
+
+  if (!repoUrl || !hash || !filePath) {
+    return res.status(400).json({ status: "error", message: "Missing required parameters" });
+  }
+
+  try {
+    const diff = await githubService.getCommitDiff(repoUrl, hash, filePath);
+    res.json({ status: 'success', data: diff });
+  } catch (error) {
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};

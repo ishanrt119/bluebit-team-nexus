@@ -23,11 +23,13 @@ const ComplexityTrendChart = ({ data }) => {
     // Parse dates
     const formattedData = data.map(d => ({
       date: new Date(d.date),
-      additions: d.additions,
-      deletions: d.deletions,
-      filesChanged: d.filesChanged,
-      commits: d.commits
-    })).sort((a, b) => a.date - b.date);
+      additions: d.additions || 0,
+      deletions: d.deletions || 0,
+      filesChanged: d.filesChanged || 0,
+      commits: d.commits || 0
+    })).filter(d => !isNaN(d.date.getTime())).sort((a, b) => a.date - b.date);
+
+    if (formattedData.length === 0) return;
 
     // Scales
     const x = d3.scaleTime()
@@ -136,19 +138,25 @@ const ComplexityTrendChart = ({ data }) => {
   }, [data]);
 
   return (
-    <div className="chart-container">
-      <div className="flex items-center gap-4 mb-4 px-4">
-        <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-[#10b981]"></div>
-          <span className="text-[10px] text-slate-500 uppercase">Insertions</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-[#ef4444]"></div>
-          <span className="text-[10px] text-slate-500 uppercase">Deletions</span>
-        </div>
-      </div>
-      <svg ref={svgRef}></svg>
-      <div ref={tooltipRef} className="tooltip-portal"></div>
+    <div className="chart-container h-[300px] flex flex-col">
+      {(!data || data.length === 0) ? (
+        <div className="flex-1 flex items-center justify-center text-slate-500 text-sm">No complexity data available for this range</div>
+      ) : (
+        <>
+          <div className="flex items-center gap-4 mb-4 px-4">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-[#10b981]"></div>
+              <span className="text-[10px] text-slate-500 uppercase">Insertions</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-[#ef4444]"></div>
+              <span className="text-[10px] text-slate-500 uppercase">Deletions</span>
+            </div>
+          </div>
+          <svg ref={svgRef}></svg>
+          <div ref={tooltipRef} className="tooltip-portal"></div>
+        </>
+      )}
     </div>
   );
 };

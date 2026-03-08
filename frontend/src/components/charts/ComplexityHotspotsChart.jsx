@@ -8,7 +8,9 @@ const ComplexityHotspotsChart = ({ data, onFileClick }) => {
   useEffect(() => {
     if (!data || data.length === 0) return;
 
-    const chartData = data.slice(0, 10);
+    const chartData = data.filter(d => d.path && typeof d.count === 'number').slice(0, 10);
+    if (chartData.length === 0) return;
+    
     const margin = { top: 10, right: 40, bottom: 20, left: 120 };
     const width = svgRef.current.parentElement.clientWidth - margin.left - margin.right;
     const height = chartData.length * 30;
@@ -108,9 +110,15 @@ const ComplexityHotspotsChart = ({ data, onFileClick }) => {
   }, [data]);
 
   return (
-    <div className="chart-container">
-      <svg ref={svgRef}></svg>
-      <div ref={tooltipRef} className="tooltip-portal"></div>
+    <div className="chart-container h-[300px] flex flex-col">
+      {(!data || data.length === 0) ? (
+        <div className="flex-1 flex items-center justify-center text-slate-500 text-sm">No hotspots data available</div>
+      ) : (
+        <>
+          <svg ref={svgRef}></svg>
+          <div ref={tooltipRef} className="tooltip-portal"></div>
+        </>
+      )}
     </div>
   );
 };

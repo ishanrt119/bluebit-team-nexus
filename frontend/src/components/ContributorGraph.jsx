@@ -14,15 +14,17 @@ const ContributorGraph = ({ timeline, contributors }) => {
   // Map login to avatar for quick lookup
   const avatarMap = useMemo(() => {
     const map = {};
-    contributors.forEach(c => {
-      map[c.login] = c.avatar;
-    });
+    if (contributors && Array.isArray(contributors)) {
+      contributors.forEach(c => {
+        map[c.login] = c.avatar;
+      });
+    }
     return map;
   }, [contributors]);
 
   // Process data for charts
   const chartData = useMemo(() => {
-    if (!timeline || timeline.length === 0) return { timeline: [], hourly: [], daily: [], monthly: [], pie: [] };
+    if (!timeline || !Array.isArray(timeline) || timeline.length === 0) return { timeline: [], hourly: [], daily: [], monthly: [], pie: [] };
 
     const filteredTimeline = selectedAuthors.length > 0 
       ? timeline.filter(c => selectedAuthors.includes(c.login || c.author))
