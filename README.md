@@ -160,6 +160,9 @@ These visualizations transform complex repository data into **easy-to-understand
 
 The system processes repository data in multiple stages.
 
+<img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/e5fe8e2a-52b0-4ed0-8c21-f3faae6fa43c" />
+
+
 ```
 Git Repository
       │
