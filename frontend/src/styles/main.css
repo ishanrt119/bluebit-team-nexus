@@ -18,8 +18,8 @@
 
 /* Dashboard Styles */
 .dashboard-page {
-  background-color: #0f172a;
-  color: #f1f5f9;
+  background-color: #020617;
+  color: #e2e8f0;
   min-height: 100vh;
   font-family: 'Inter', sans-serif;
 }
@@ -389,4 +389,227 @@
 
 .retry-btn:hover {
   background-color: #7dd3fc;
+}
+
+/* Analytics Tabs */
+.analytics-tabs-container {
+  margin-bottom: 2.5rem;
+  display: flex;
+  justify-content: center;
+}
+
+.tabs-pill {
+  background-color: #0f172a;
+  border: 1px solid #1e293b;
+  padding: 4px;
+  border-radius: 9999px;
+  display: flex;
+  gap: 4px;
+}
+
+.tab-item {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  padding: 8px 20px;
+  border-radius: 9999px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.tab-item:hover {
+  color: #e2e8f0;
+}
+
+.tab-item.active {
+  background-color: #10b981;
+  color: #020617;
+}
+
+/* Stats Grid */
+.analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.5rem;
+}
+
+@media (max-width: 1024px) {
+  .analytics-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .analytics-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Analytics Card */
+.analytics-card {
+  background-color: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 16px;
+  padding: 1.5rem;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  opacity: 0;
+  animation: slideUpFade 0.6s forwards;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+.analytics-card:hover {
+  transform: translateY(-8px);
+  border-color: #10b981;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1), 0 0 15px rgba(16, 185, 129, 0.1);
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1.5rem;
+}
+
+.card-icon-wrapper {
+  background-color: rgba(255, 255, 255, 0.03);
+  padding: 10px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.3s ease;
+}
+
+.analytics-card:hover .card-icon-wrapper {
+  transform: scale(1.1);
+  background-color: rgba(16, 185, 129, 0.1);
+}
+
+.card-icon {
+  width: 20px;
+  height: 20px;
+  color: #94a3b8;
+}
+
+.analytics-card:hover .card-icon {
+  color: #10b981;
+}
+
+.status-badge {
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.badge-green {
+  background-color: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.1);
+}
+
+.badge-blue {
+  background-color: rgba(56, 189, 248, 0.1);
+  color: #38bdf8;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.1);
+}
+
+.badge-red {
+  background-color: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.1);
+}
+
+.badge-gray {
+  background-color: rgba(148, 163, 184, 0.1);
+  color: #94a3b8;
+}
+
+.card-title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #94a3b8;
+  margin: 0 0 0.5rem 0;
+}
+
+.card-value {
+  font-size: 2.5rem;
+  font-weight: 800;
+  color: #e2e8f0;
+  margin-bottom: 0.75rem;
+  letter-spacing: -0.02em;
+}
+
+.card-description {
+  font-size: 0.8125rem;
+  color: #64748b;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.card-glow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle at top right, rgba(16, 185, 129, 0.05), transparent 70%);
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+
+.analytics-card:hover .card-glow {
+  opacity: 1;
+}
+
+/* Tab Content */
+.tab-content {
+  min-height: 400px;
+}
+
+.fade-in {
+  animation: fadeIn 0.5s ease-out;
+}
+
+.placeholder-view {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed #1e293b;
+  border-radius: 24px;
+  background-color: rgba(15, 23, 42, 0.3);
+}
+
+.empty-state {
+  text-align: center;
+  color: #64748b;
+}
+
+.empty-state h3 {
+  color: #e2e8f0;
+  margin-bottom: 0.5rem;
+  text-transform: capitalize;
+}
+
+/* Animations */
+@keyframes slideUpFade {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }

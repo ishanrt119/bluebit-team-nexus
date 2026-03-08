@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import DashboardNavbar from '../components/DashboardNavbar.jsx';
 import RepoHeader from '../components/RepoHeader.jsx';
-import StatsCards from '../components/StatsCards.jsx';
-import ActivitySection from '../components/ActivitySection.jsx';
+import AnalyticsTabs from '../components/AnalyticsTabs.jsx';
+import StatsGrid from '../components/StatsGrid.jsx';
 
 const RepoDashboard = () => {
   const [searchParams] = useSearchParams();
@@ -11,6 +11,15 @@ const RepoDashboard = () => {
   const [repoData, setRepoData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [activeTab, setActiveTab] = useState('analytics');
+
+  // Mock analytics data
+  const mockAnalytics = {
+    commits: 13,
+    contributors: 2,
+    churnRate: 98.8,
+    refactors: 0
+  };
 
   useEffect(() => {
     const fetchRepoData = async () => {
@@ -70,8 +79,23 @@ const RepoDashboard = () => {
       <DashboardNavbar repoName={repoData?.name} />
       <main className="dashboard-content">
         <RepoHeader repoData={repoData} />
-        <StatsCards repoData={repoData} />
-        <ActivitySection />
+        
+        <AnalyticsTabs activeTab={activeTab} onTabChange={setActiveTab} />
+        
+        {activeTab === 'analytics' && (
+          <div className="tab-content fade-in">
+            <StatsGrid data={mockAnalytics} />
+          </div>
+        )}
+
+        {activeTab !== 'analytics' && (
+          <div className="tab-content placeholder-view">
+            <div className="empty-state">
+              <h3>{activeTab.replace('-', ' ')} View</h3>
+              <p>This section is currently under development.</p>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );
