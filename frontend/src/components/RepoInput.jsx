@@ -1,37 +1,20 @@
 import React, { useState } from 'react';
-import { Search, ArrowRight, Play, Loader2 } from 'lucide-react';
+import { Search, ArrowRight, Play } from 'lucide-react';
 import { motion } from 'motion/react';
-import AnalysisResult from './AnalysisResult.jsx';
+import { useNavigate } from 'react-router-dom';
 
 const RepoInput = () => {
   const [repoUrl, setRepoUrl] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState('');
+  const navigate = useNavigate();
 
-  const handleAnalyze = async () => {
+  const handleAnalyze = () => {
     if (!repoUrl) return;
-    setLoading(true);
-    setError('');
-    setResult(null);
-    try {
-      const response = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ repoUrl }),
-      });
-      const data = await response.json();
-      if (data.status === 'success') {
-        setResult(data.data);
-      } else {
-        setError(data.message || 'Failed to analyze repository');
-      }
-    } catch (error) {
-      console.error('Error analyzing repo:', error);
-      setError('Connection error. Please try again.');
-    } finally {
-      setLoading(false);
+    const githubRegex = /^https?:\/\/(www\.)?github\.com\/[\w-]+\/[\w.-]+\/?$/;
+    if (!githubRegex.test(repoUrl)) {
+      alert('Please enter a valid GitHub repository URL');
+      return;
     }
+    navigate(`/repo?url=${encodeURIComponent(repoUrl)}`);
   };
 
   return (
@@ -69,28 +52,16 @@ const RepoInput = () => {
           <div className="flex gap-3">
             <button
               onClick={handleAnalyze}
-              disabled={loading}
-              className="flex-1 bg-blue-600 text-white py-4 rounded-xl font-bold hover:bg-blue-500 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+              className="flex-1 bg-blue-600 text-white py-4 rounded-xl font-bold hover:bg-blue-500 transition-all flex items-center justify-center gap-2"
             >
-              {loading ? 'Analyzing...' : (
-                <>
-                  Analyze Repository <ArrowRight className="w-5 h-5" />
-                </>
-              )}
+              Analyze Repository <ArrowRight className="w-5 h-5" />
             </button>
             <button className="px-6 py-4 bg-white/5 border border-white/10 rounded-xl font-bold hover:bg-white/10 transition-all flex items-center gap-2 text-white">
               <Play className="w-4 h-4 fill-current" /> View Demo
             </button>
           </div>
-          {error && (
-            <div className="mt-4 p-3 rounded-lg text-sm bg-red-500/10 text-red-400 border border-red-500/20">
-              {error}
-            </div>
-          )}
         </div>
       </motion.div>
-
-      {result && <AnalysisResult data={result} />}
     </div>
   );
 };
