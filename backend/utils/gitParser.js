@@ -4,6 +4,7 @@ export const parseGitLog = async (repoPath) => {
   const git = simpleGit(repoPath);
   const log = await git.log();
   
+  // Basic stats
   const authors = {};
   const timeline = log.all.map(commit => {
     authors[commit.author_name] = (authors[commit.author_name] || 0) + 1;

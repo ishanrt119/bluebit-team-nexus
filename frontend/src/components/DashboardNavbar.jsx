@@ -19,7 +19,14 @@ const DashboardNavbar = ({ repoName }) => {
         </div>
       </div>
       
-      
+      <div className="nav-center">
+        <ul className="nav-links">
+          <li className="active">Overview</li>
+          <li>Commits</li>
+          <li>Files</li>
+          <li>Visualizations</li>
+        </ul>
+      </div>
 
       <div className="nav-right">
         <div className="repo-badge">

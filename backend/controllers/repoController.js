@@ -25,31 +25,41 @@ export const analyzeRepo = async (req, res) => {
     // Fetch metadata
     const metadata = await githubService.getRepoMetadata(owner, repoName);
     
-    // Fetch stats and commits
-    const stats = await githubService.getRepoStats(owner, repoName);
-    const commits = await githubService.getRepoCommits(owner, repoName);
+    // Fetch stats, total commits and recent commits
+    const [stats, totalCommitsCount, commits] = await Promise.all([
+      githubService.getRepoStats(owner, repoName),
+      githubService.getTotalCommits(owner, repoName),
+      githubService.getRepoCommits(owner, repoName, 300)
+    ]);
 
     // Process stats
-    let totalCommits = 0;
+    let totalCommits = totalCommitsCount;
     let totalAdditions = 0;
     let totalDeletions = 0;
     const contributors = [];
 
-    if (Array.isArray(stats)) {
+    if (Array.isArray(stats) && stats.length > 0) {
+      // If we have stats, use them for total commits as well to be consistent with contributors
+      let statsTotalCommits = 0;
       stats.forEach(contributor => {
-        totalCommits += contributor.total;
-        contributor.weeks.forEach(week => {
-          totalAdditions += week.a;
-          totalDeletions += week.d;
-        });
+        statsTotalCommits += contributor.total;
+        const additions = contributor.weeks.reduce((sum, w) => sum + w.a, 0);
+        const deletions = contributor.weeks.reduce((sum, w) => sum + w.d, 0);
+        
+        totalAdditions += additions;
+        totalDeletions += deletions;
+        
         contributors.push({
           login: contributor.author.login,
           avatar: contributor.author.avatar_url,
           commits: contributor.total,
-          additions: contributor.weeks.reduce((sum, w) => sum + w.a, 0),
-          deletions: contributor.weeks.reduce((sum, w) => sum + w.d, 0)
+          additions: additions,
+          deletions: deletions
         });
       });
+      
+      // Use the larger of the two counts to be safe
+      totalCommits = Math.max(totalCommits, statsTotalCommits);
     }
 
     // Process commits for timeline and refactors

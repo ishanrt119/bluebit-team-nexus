@@ -3,6 +3,7 @@ import React from 'react';
 const AnalyticsTabs = ({ activeTab, onTabChange }) => {
   const tabs = [
     { id: 'analytics', label: 'Analytics' },
+    { id: 'contributors', label: 'Contributor Graph' },
     { id: 'preview', label: 'Project Preview' },
     { id: 'assistant', label: 'Repository Assistant' },
     { id: 'explorer', label: 'Directory Explorer' }

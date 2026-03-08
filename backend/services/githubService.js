@@ -35,7 +35,22 @@ export const getRepoMetadata = async (owner, repo) => {
 export const getRepoStats = async (owner, repo) => {
   try {
     // This endpoint returns a list of contributors with their weekly stats
-    const response = await axios.get(`https://api.github.com/repos/${owner}/${repo}/stats/contributors`);
+    // GitHub may return 202 if stats are being computed, so we retry a few times
+    let response;
+    let retries = 3;
+    
+    while (retries > 0) {
+      response = await axios.get(`https://api.github.com/repos/${owner}/${repo}/stats/contributors`);
+      if (response.status === 200) break;
+      if (response.status === 202) {
+        console.log(`Stats for ${owner}/${repo} are being computed, retrying in 2 seconds...`);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        retries--;
+      } else {
+        break;
+      }
+    }
+    
     return response.data;
   } catch (error) {
     console.error('Error fetching stats:', error);
@@ -43,11 +58,41 @@ export const getRepoStats = async (owner, repo) => {
   }
 };
 
-export const getRepoCommits = async (owner, repo) => {
+export const getTotalCommits = async (owner, repo) => {
   try {
-    // Fetch last 100 commits
-    const response = await axios.get(`https://api.github.com/repos/${owner}/${repo}/commits?per_page=100`);
-    return response.data;
+    // Trick to get total commit count: fetch 1 commit and check the 'Link' header
+    const response = await axios.get(`https://api.github.com/repos/${owner}/${repo}/commits?per_page=1`);
+    const linkHeader = response.headers.link;
+    
+    if (!linkHeader) return 1;
+    
+    // Example link header: <...&page=2>; rel="next", <...&page=123>; rel="last"
+    const match = linkHeader.match(/&page=(\d+)>; rel="last"/);
+    if (match) {
+      return parseInt(match[1], 10);
+    }
+    
+    return 1;
+  } catch (error) {
+    console.error('Error fetching total commits:', error);
+    return 0;
+  }
+};
+
+export const getRepoCommits = async (owner, repo, limit = 100) => {
+  try {
+    // Fetch commits with pagination if limit > 100
+    const perPage = Math.min(limit, 100);
+    const pages = Math.ceil(limit / perPage);
+    let allCommits = [];
+    
+    for (let i = 1; i <= pages; i++) {
+      const response = await axios.get(`https://api.github.com/repos/${owner}/${repo}/commits?per_page=${perPage}&page=${i}`);
+      allCommits = allCommits.concat(response.data);
+      if (response.data.length < perPage) break;
+    }
+    
+    return allCommits.slice(0, limit);
   } catch (error) {
     console.error('Error fetching commits:', error);
     return [];

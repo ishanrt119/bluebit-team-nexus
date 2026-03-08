@@ -4,6 +4,7 @@ import DashboardNavbar from '../components/DashboardNavbar.jsx';
 import RepoHeader from '../components/RepoHeader.jsx';
 import AnalyticsTabs from '../components/AnalyticsTabs.jsx';
 import StatsGrid from '../components/StatsGrid.jsx';
+import ContributorGraph from '../components/ContributorGraph.jsx';
 
 const RepoDashboard = () => {
   const [searchParams] = useSearchParams();
@@ -12,14 +13,6 @@ const RepoDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('analytics');
-
-  // Mock analytics data
-  const mockAnalytics = {
-    commits: 13,
-    contributors: 2,
-    churnRate: 98.8,
-    refactors: 0
-  };
 
   useEffect(() => {
     const fetchRepoData = async () => {
@@ -82,13 +75,22 @@ const RepoDashboard = () => {
         
         <AnalyticsTabs activeTab={activeTab} onTabChange={setActiveTab} />
         
-        {activeTab === 'analytics' && (
+        {activeTab === 'analytics' && repoData?.analytics && (
           <div className="tab-content fade-in">
-            <StatsGrid data={mockAnalytics} />
+            <StatsGrid data={repoData.analytics} />
           </div>
         )}
 
-        {activeTab !== 'analytics' && (
+        {activeTab === 'contributors' && (
+          <div className="tab-content fade-in">
+            <ContributorGraph 
+              timeline={repoData?.timeline || []} 
+              contributors={repoData?.contributors || []} 
+            />
+          </div>
+        )}
+
+        {!['analytics', 'contributors'].includes(activeTab) && (
           <div className="tab-content placeholder-view">
             <div className="empty-state">
               <h3>{activeTab.replace('-', ' ')} View</h3>
