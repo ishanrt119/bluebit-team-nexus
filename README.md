@@ -15,7 +15,6 @@
 11. Screenshots and Demonstration
 12. Future Improvements
 13. Contributing
-14. License
 
 ---
 
@@ -388,8 +387,6 @@ git push origin feature-name
 
 ---
 
-## 14. License
 
-This project is distributed under the MIT License.
 
 
