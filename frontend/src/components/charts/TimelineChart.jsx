@@ -1,9 +1,8 @@
 import React, { useEffect, useRef } from 'react';
 import * as d3 from 'd3';
 
-const TimelineChart = ({ data }) => {
+const TimelineChart = ({ data, onHover, onLeave }) => {
   const svgRef = useRef();
-  const tooltipRef = useRef();
 
   useEffect(() => {
     if (!data || data.length === 0) return;
@@ -25,7 +24,8 @@ const TimelineChart = ({ data }) => {
     const parseDate = d3.timeParse("%m/%d/%Y");
     const formattedData = data.map(d => ({
       date: parseDate(d.date) || new Date(d.date),
-      count: d.count
+      count: d.count,
+      contributors: d.contributors || []
     })).sort((a, b) => a.date - b.date);
 
     // Scales
@@ -157,7 +157,7 @@ const TimelineChart = ({ data }) => {
       .on("mouseover", () => focus.style("display", null))
       .on("mouseout", () => {
         focus.style("display", "none");
-        d3.select(tooltipRef.current).style("opacity", 0);
+        if (onLeave) onLeave();
       })
       .on("mousemove", (event) => {
         const bisectDate = d3.bisector(d => d.date).left;
@@ -165,24 +165,29 @@ const TimelineChart = ({ data }) => {
         const i = bisectDate(formattedData, x0, 1);
         const d0 = formattedData[i - 1];
         const d1 = formattedData[i];
-        const d = x0 - d0.date > d1.date - x0 ? d1 : d0;
+        
+        let d = d0;
+        if (d0 && d1) {
+          d = x0 - d0.date > d1.date - x0 ? d1 : d0;
+        } else if (d1) {
+          d = d1;
+        }
+
+        if (!d) return;
 
         focus.attr("transform", `translate(${x(d.date)},0)`);
         focus.select("circle").attr("transform", `translate(0,${y(d.count)})`);
 
-        const tooltip = d3.select(tooltipRef.current);
-        tooltip.style("opacity", 1)
-          .style("left", (event.pageX + 10) + "px")
-          .style("top", (event.pageY - 10) + "px")
-          .html(`
-            <div class="d3-tooltip">
-              <div class="tooltip-date">${d3.timeFormat("%b %d, %Y")(d.date)}</div>
-              <div class="tooltip-value">Activity: <span>${d.count} Commits</span></div>
-            </div>
-          `);
+        if (onHover) {
+          onHover({
+            date: d3.timeFormat("%b %d, %Y")(d.date),
+            commitCount: d.count,
+            contributors: d.contributors
+          });
+        }
       });
 
-  }, [data]);
+  }, [data, onHover, onLeave]);
 
   return (
     <div className="chart-container">
@@ -191,7 +196,6 @@ const TimelineChart = ({ data }) => {
         <span className="text-[10px] text-slate-500 uppercase tracking-widest">Commit History</span>
       </div>
       <svg ref={svgRef}></svg>
-      <div ref={tooltipRef} className="tooltip-portal"></div>
     </div>
   );
 };

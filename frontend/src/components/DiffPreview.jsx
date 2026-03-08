@@ -1,6 +1,19 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 
-const DiffPreview = ({ diff, position }) => {
+const DiffPreview = ({ diff }) => {
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+
+  useEffect(() => {
+    if (!diff) return;
+
+    const handleMouseMove = (e) => {
+      setPosition({ x: e.clientX, y: e.clientY });
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    return () => window.removeEventListener('mousemove', handleMouseMove);
+  }, [diff]);
+
   if (!diff) return null;
 
   return (

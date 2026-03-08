@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { Users, Calendar, Clock, PieChart as PieIcon, Filter } from 'lucide-react';
 import TimelineChart from './charts/TimelineChart';
 import DonutChart from './charts/DonutChart';
@@ -8,7 +8,7 @@ import MonthlyChart from './charts/MonthlyChart';
 
 const COLORS = ['#10b981', '#38bdf8', '#8b5cf6', '#f59e0b', '#ef4444', '#ec4899', '#06b6d4', '#f97316'];
 
-const ContributorGraph = ({ timeline, contributors }) => {
+const ContributorGraph = ({ timeline, contributors, onHover, onLeave }) => {
   const [selectedAuthors, setSelectedAuthors] = useState([]);
 
   // Map login to avatar for quick lookup
@@ -34,10 +34,14 @@ const ContributorGraph = ({ timeline, contributors }) => {
     const timelineMap = {};
     filteredTimeline.forEach(commit => {
       const date = new Date(commit.date).toLocaleDateString();
-      timelineMap[date] = (timelineMap[date] || 0) + 1;
+      if (!timelineMap[date]) {
+        timelineMap[date] = { count: 0, contributors: new Set() };
+      }
+      timelineMap[date].count++;
+      timelineMap[date].contributors.add(commit.login || commit.author);
     });
     const timelineData = Object.entries(timelineMap)
-      .map(([date, count]) => ({ date, count }))
+      .map(([date, data]) => ({ date, count: data.count, contributors: Array.from(data.contributors) }))
       .sort((a, b) => new Date(a.date) - new Date(b.date));
 
     // 2. Hourly Activity
@@ -96,6 +100,10 @@ const ContributorGraph = ({ timeline, contributors }) => {
     );
   };
 
+  const handleDonutHover = useCallback((data) => {
+    if (onHover) onHover({ type: 'donut', ...data });
+  }, [onHover]);
+
   return (
     <div className="contributor-graph-container fade-in">
       {/* Author Filter */}
@@ -140,7 +148,7 @@ const ContributorGraph = ({ timeline, contributors }) => {
             </div>
           </div>
           <div className="chart-wrapper">
-            <TimelineChart data={chartData.timeline} />
+            <TimelineChart data={chartData.timeline} onHover={onHover} onLeave={onLeave} />
           </div>
         </div>
 
@@ -154,7 +162,7 @@ const ContributorGraph = ({ timeline, contributors }) => {
             </div>
           </div>
           <div className="chart-wrapper pie-wrapper">
-            <DonutChart data={chartData.pie} colors={COLORS} />
+            <DonutChart data={chartData.pie} colors={COLORS} onHover={handleDonutHover} onLeave={onLeave} />
           </div>
         </div>
 

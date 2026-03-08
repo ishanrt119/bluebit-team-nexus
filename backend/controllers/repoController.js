@@ -148,9 +148,10 @@ export const analyzeRepoStream = async (req, res) => {
     const tempPath = await githubService.cloneRepo(repoUrl);
     
     sendEvent('status', { message: 'Parsing commit history...' });
-    const detailed = await githubService.getDetailedGitStats(tempPath);
+    await githubService.getDetailedGitStatsStream(tempPath, (commit) => {
+      sendEvent('commit', commit);
+    });
     
-    sendEvent('history', detailed.commitHistory);
     sendEvent('status', { message: 'Analysis complete!' });
     sendEvent('done', { success: true });
 

@@ -157,70 +157,60 @@ export const cloneRepo = async (repoUrl) => {
   return tempDir;
 };
 
-export const getDetailedGitStats = async (repoPath) => {
-  const git = simpleGit(repoPath);
+export const getDetailedGitStatsStream = async (repoPath, onCommit) => {
+  const { spawn } = await import('child_process');
+  const readline = await import('readline');
   
-  try {
-    // Get full commit history with files and stats
-    // %ai: author date, %an: author name, %ae: author email, %s: subject, %H: hash
-    const rawLog = await git.raw([
-      'log', 
-      '--pretty=format:%ai|%an|%ae|%s|%H', 
-      '--numstat'
-    ]);
-    
-    const commits = [];
-    const blocks = rawLog.split('\n\n'); // numstat adds a newline between commits
-    
-    // Actually, numstat output is:
-    // date|name|email|subject|hash
-    // 
-    // 10  5   file1.txt
-    // 2   0   file2.js
-    
-    const lines = rawLog.split('\n');
-    let currentCommit = null;
-    
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line) continue;
-      
-      if (line.includes('|')) {
-        const [date, author, email, message, hash] = line.split('|');
-        if (date && author && hash) {
-          currentCommit = {
-            date: date.split(' ')[0],
-            author,
-            email,
-            message,
-            hash,
-            files: [],
-            additions: 0,
-            deletions: 0
-          };
-          commits.push(currentCommit);
-        }
-      } else {
-        const parts = line.split(/\s+/);
-        if (parts.length >= 3 && currentCommit) {
-          const additions = parseInt(parts[0], 10) || 0;
-          const deletions = parseInt(parts[1], 10) || 0;
-          const filePath = parts[2];
-          
-          currentCommit.files.push({ path: filePath, additions, deletions });
-          currentCommit.additions += additions;
-          currentCommit.deletions += deletions;
-        }
+  const gitLog = spawn('git', ['log', '--pretty=format:%ai|%an|%ae|%s|%H', '--numstat'], { cwd: repoPath });
+  
+  const rl = readline.createInterface({
+    input: gitLog.stdout,
+    terminal: false
+  });
+
+  let currentCommit = null;
+
+  for await (const line of rl) {
+    const trimmedLine = line.trim();
+    if (!trimmedLine) continue;
+
+    if (trimmedLine.includes('|')) {
+      if (currentCommit) {
+        onCommit(currentCommit);
+      }
+      const [date, author, email, message, hash] = trimmedLine.split('|');
+      currentCommit = {
+        date: date.split(' ')[0],
+        author,
+        email,
+        message,
+        hash,
+        files: [],
+        additions: 0,
+        deletions: 0
+      };
+    } else {
+      const parts = trimmedLine.split(/\s+/);
+      if (parts.length >= 3 && currentCommit) {
+        const additions = parseInt(parts[0], 10) || 0;
+        const deletions = parseInt(parts[1], 10) || 0;
+        const filePath = parts[2];
+        
+        currentCommit.files.push({ path: filePath, additions, deletions });
+        currentCommit.additions += additions;
+        currentCommit.deletions += deletions;
       }
     }
-
-    return {
-      commitHistory: commits
-    };
-  } catch (error) {
-    console.error('Error in detailed git stats:', error);
-    return { commitHistory: [] };
   }
+  if (currentCommit) {
+    onCommit(currentCommit);
+  }
+};
+
+export const getDetailedGitStats = async (repoPath) => {
+  const commits = [];
+  await getDetailedGitStatsStream(repoPath, (commit) => commits.push(commit));
+  return { commitHistory: commits };
 };
 
 export const getCommitDiff = async (repoUrl, hash, filePath) => {

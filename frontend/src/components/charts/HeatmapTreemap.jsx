@@ -1,9 +1,8 @@
 import React, { useEffect, useRef } from 'react';
 import * as d3 from 'd3';
 
-const HeatmapTreemap = ({ data, onFileClick }) => {
+const HeatmapTreemap = ({ data, onFileClick, onCellHover, onCellLeave }) => {
   const svgRef = useRef();
-  const tooltipRef = useRef();
 
   useEffect(() => {
     if (!data || data.length === 0) return;
@@ -125,21 +124,17 @@ const HeatmapTreemap = ({ data, onFileClick }) => {
       .style("cursor", "pointer")
       .on("mouseover", function(event, d) {
         d3.select(this).attr("stroke", "#fff").attr("stroke-width", 2);
-        
-        const tooltip = d3.select(tooltipRef.current);
-        tooltip.style("opacity", 1)
-          .style("left", (event.pageX + 10) + "px")
-          .style("top", (event.pageY - 10) + "px")
-          .html(`
-            <div class="d3-tooltip">
-              <div class="tooltip-label">File: ${d.data.path}</div>
-              <div class="tooltip-value">Changes: <span>${d.data.count}</span></div>
-            </div>
-          `);
+        if (onCellHover) {
+          onCellHover({
+            path: d.data.path,
+            commitCount: d.data.count,
+            lastModified: new Date() // Simplified for now
+          });
+        }
       })
       .on("mouseout", function() {
         d3.select(this).attr("stroke", "none");
-        d3.select(tooltipRef.current).style("opacity", 0);
+        if (onCellLeave) onCellLeave();
       })
       .on("click", (event, d) => onFileClick && onFileClick(d.data.path));
 
@@ -156,12 +151,11 @@ const HeatmapTreemap = ({ data, onFileClick }) => {
         return (d.x1 - d.x0 > name.length * 6) ? name : "";
       });
 
-  }, [data]);
+  }, [data, onCellHover, onCellLeave]);
 
   return (
     <div className="chart-container">
       <svg ref={svgRef}></svg>
-      <div ref={tooltipRef} className="tooltip-portal"></div>
     </div>
   );
 };

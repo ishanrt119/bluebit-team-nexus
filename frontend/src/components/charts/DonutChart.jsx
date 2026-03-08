@@ -1,9 +1,8 @@
 import React, { useEffect, useRef } from 'react';
 import * as d3 from 'd3';
 
-const DonutChart = ({ data, colors }) => {
+const DonutChart = ({ data, colors, onHover, onLeave }) => {
   const svgRef = useRef();
-  const tooltipRef = useRef();
 
   useEffect(() => {
     if (!data || data.length === 0) return;
@@ -63,16 +62,13 @@ const DonutChart = ({ data, colors }) => {
         .attr("d", hoverArc)
         .style("filter", "drop-shadow(0 0 8px rgba(16, 185, 129, 0.4))");
 
-      const tooltip = d3.select(tooltipRef.current);
-      tooltip.style("opacity", 1)
-        .style("left", (event.pageX + 10) + "px")
-        .style("top", (event.pageY - 10) + "px")
-        .html(`
-          <div class="d3-tooltip">
-            <div class="tooltip-label">${d.data.name}</div>
-            <div class="tooltip-value">${d.data.value} commits (${percentage}%)</div>
-          </div>
-        `);
+      if (onHover) {
+        onHover({
+          name: d.data.name,
+          value: d.data.value,
+          percentage
+        });
+      }
     })
     .on("mouseout", function() {
       d3.select(this)
@@ -81,7 +77,7 @@ const DonutChart = ({ data, colors }) => {
         .attr("d", arc)
         .style("filter", "none");
       
-      d3.select(tooltipRef.current).style("opacity", 0);
+      if (onLeave) onLeave();
     });
 
     // Center text
@@ -100,7 +96,7 @@ const DonutChart = ({ data, colors }) => {
       .style("font-weight", "bold")
       .text(d3.sum(data, d => d.value));
 
-  }, [data, colors]);
+  }, [data, colors, onHover, onLeave]);
 
   return (
     <div className="chart-container flex flex-col items-center">
@@ -121,7 +117,6 @@ const DonutChart = ({ data, colors }) => {
         })}
       </div>
       <svg ref={svgRef}></svg>
-      <div ref={tooltipRef} className="tooltip-portal"></div>
     </div>
   );
 };

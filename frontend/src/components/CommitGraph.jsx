@@ -28,12 +28,17 @@ const CommitNode = ({ data }) => (
   <div className="flex flex-col items-center justify-center h-full w-full px-2 text-center">
     <div className="text-[10px] font-bold truncate w-full">{data.sha}</div>
     <div className="text-[9px] truncate w-full">{data.label}</div>
+    <div className="flex gap-1 mt-1">
+      {data.commit.branches?.map(b => (
+        <span key={b} className="text-[8px] bg-slate-700 text-slate-300 px-1 rounded">{b}</span>
+      ))}
+    </div>
   </div>
 );
 
 const nodeTypes = { commit: CommitNode };
 
-const CommitGraph = ({ commits, contributors }) => {
+const CommitGraph = ({ commits, contributors, onNodeHover, onNodeLeave }) => {
   console.log('Commits data:', commits);
   const [selectedCommit, setSelectedCommit] = useState(null);
   const [hoveredCommit, setHoveredCommit] = useState(null);
@@ -134,10 +139,12 @@ const CommitGraph = ({ commits, contributors }) => {
 
   const onNodeMouseEnter = (_, node) => {
     setHoveredCommit(node.data.commit);
+    if (onNodeHover) onNodeHover(node.data.commit);
   };
 
   const onNodeMouseLeave = () => {
     setHoveredCommit(null);
+    if (onNodeLeave) onNodeLeave();
   };
 
   return (
