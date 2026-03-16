@@ -16,7 +16,6 @@ import {
   AlertCircle,
   Play,
   ChevronRight,
-  Terminal,
   FileCode,
   TrendingUp,
   ArrowLeft,
@@ -229,9 +228,7 @@ export default function App() {
       <nav className="border-b border-zinc-900 px-6 py-4 flex items-center justify-between backdrop-blur-md bg-zinc-950/50 sticky top-0 z-40">
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-emerald-600 rounded-lg flex items-center justify-center">
-              <Terminal className="w-5 h-5 text-white" />
-            </div>
+            <img src="/logo.png" alt="GitInsight AI" className="w-8 h-8 rounded-lg" />
             <span className="font-bold tracking-tight text-lg">GitInsight AI</span>
           </div>
 
