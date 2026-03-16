@@ -1,4 +1,4 @@
-# 🚀 Repository Analytics Dashboard
+# 🚀 GitInsight AI
 
 📊 **Analyze Git repository activity with interactive visualizations**
 
@@ -28,7 +28,7 @@
 
 # 🌍 Overview
 
-The **Repository Analytics Dashboard** is an interactive **data visualization platform** designed to analyze Git repository activity and provide insights into contributor behavior and repository evolution.
+The **GitInsight AI** is an interactive **data visualization platform** designed to analyze Git repository activity and provide insights into contributor behavior and repository evolution.
 
 Modern software development involves **multiple contributors working collaboratively**. Understanding development patterns, activity trends, and contribution distribution helps teams improve project management and collaboration.
 
