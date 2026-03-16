@@ -9,11 +9,14 @@ export function cn(...inputs: ClassValue[]) {
 export interface Commit {
   sha: string;
   author: string;
+  avatarUrl?: string | null;
+  login?: string | null;
   date: string;
   message: string;
   sentiment: 'positive' | 'negative' | 'neutral';
   parentShas?: string[];
   filesChanged?: number;
+  filePaths?: string[];
   insertions?: number;
   deletions?: number;
   isLatest?: boolean;

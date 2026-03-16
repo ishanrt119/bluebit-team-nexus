@@ -48,14 +48,14 @@ const octokit = new Octokit({
 function analyzeSentiment(message: string) {
   const positive = ["feat", "fix", "improve", "add", "awesome", "great", "clean", "refactor", "optimize"];
   const negative = ["bug", "error", "fail", "break", "revert", "issue", "hotfix", "critical", "broken"];
-  
+
   let score = 0;
   const words = message.toLowerCase().split(/\s+/);
   words.forEach(word => {
     if (positive.some(p => word.includes(p))) score += 1;
     if (negative.some(n => word.includes(n))) score -= 1;
   });
-  
+
   if (score > 0) return "positive";
   if (score < 0) return "negative";
   return "neutral";
@@ -65,7 +65,7 @@ function analyzeSentiment(message: string) {
 function analyzeFile(path: string, content: string) {
   const issues: any[] = [];
   const lines = content.split("\n");
-  
+
   // Large file
   if (lines.length > 500) {
     issues.push({ type: "info", line: 0, description: "Large file (> 500 lines)" });
@@ -73,7 +73,7 @@ function analyzeFile(path: string, content: string) {
 
   lines.forEach((line, index) => {
     const lineNum = index + 1;
-    
+
     // TODO/FIXME
     if (line.match(/\/\/\s*(TODO|FIXME)/i)) {
       issues.push({ type: "warning", line: lineNum, description: "Found TODO/FIXME comment" });
@@ -128,15 +128,15 @@ app.post("/api/analyze", async (req, res) => {
   try {
     const match = url.match(/github\.com\/([^/]+)\/([^/.]+)/);
     if (!match) return res.status(400).json({ error: "Invalid GitHub URL" });
-    
+
     const [_, owner, repo] = match;
     const repoId = `${owner}/${repo}`;
 
     // Check cache
     const cached = db.prepare("SELECT * FROM repositories WHERE id = ?").get(repoId) as any;
     if (cached) {
-      return res.json({ 
-        data: JSON.parse(cached.data), 
+      return res.json({
+        data: JSON.parse(cached.data),
         narrative: cached.narrative ? JSON.parse(cached.narrative) : null
       });
     }
@@ -157,45 +157,62 @@ app.post("/api/analyze", async (req, res) => {
       throw error;
     }
 
-    // Fetch details for each commit to get stats (insertions/deletions)
-    // We do this in parallel but limit concurrency to avoid rate limits
-    const detailedCommits = await Promise.all(commits.map(async (c) => {
-      try {
-        const { data: detail } = await octokit.rest.repos.getCommit({
-          owner,
-          repo,
-          ref: c.sha,
-        });
-        
-        const author = detail.commit.author?.name || "Unknown";
-        const sentiment = analyzeSentiment(detail.commit.message);
-        
-        return {
-          sha: detail.sha,
-          author,
-          date: detail.commit.author?.date,
-          message: detail.commit.message,
-          sentiment,
-          parentShas: detail.parents?.map(p => p.sha) || [],
-          filesChanged: detail.files?.length || 0,
-          insertions: detail.stats?.additions || 0,
-          deletions: detail.stats?.deletions || 0,
-        };
-      } catch (e) {
-        // Fallback to basic info if detail fetch fails
-        return {
-          sha: c.sha,
-          author: c.commit.author?.name || "Unknown",
-          date: c.commit.author?.date,
-          message: c.commit.message,
-          sentiment: analyzeSentiment(c.commit.message),
-          parentShas: c.parents?.map(p => p.sha) || [],
-          filesChanged: 0,
-          insertions: 0,
-          deletions: 0,
-        };
+    // Fetch details for each commit in batches to avoid GitHub secondary rate limits
+    const BATCH_SIZE = 4;
+    const BATCH_DELAY_MS = 350;
+    const detailedCommits: any[] = [];
+
+    for (let i = 0; i < commits.length; i += BATCH_SIZE) {
+      const batch = commits.slice(i, i + BATCH_SIZE);
+      const batchResults = await Promise.all(batch.map(async (c) => {
+        try {
+          const { data: detail } = await octokit.rest.repos.getCommit({
+            owner,
+            repo,
+            ref: c.sha,
+          });
+
+          const author = detail.commit.author?.name || "Unknown";
+          const sentiment = analyzeSentiment(detail.commit.message);
+          const filePaths = detail.files?.map((f: any) => f.filename).filter(Boolean) || [];
+
+          return {
+            sha: detail.sha,
+            author,
+            avatarUrl: detail.author?.avatar_url || null,
+            login: detail.author?.login || null,
+            date: detail.commit.author?.date,
+            message: detail.commit.message,
+            sentiment,
+            parentShas: detail.parents?.map((p: any) => p.sha) || [],
+            filesChanged: filePaths.length,
+            filePaths,
+            insertions: detail.stats?.additions || 0,
+            deletions: detail.stats?.deletions || 0,
+          };
+        } catch (e) {
+          return {
+            sha: c.sha,
+            author: c.commit.author?.name || "Unknown",
+            avatarUrl: null,
+            login: null,
+            date: c.commit.author?.date,
+            message: c.commit.message,
+            sentiment: analyzeSentiment(c.commit.message),
+            parentShas: c.parents?.map((p: any) => p.sha) || [],
+            filesChanged: 0,
+            filePaths: [],
+            insertions: 0,
+            deletions: 0,
+          };
+        }
+      }));
+      detailedCommits.push(...batchResults);
+      // Pause between batches (skip delay after the last batch)
+      if (i + BATCH_SIZE < commits.length) {
+        await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
       }
-    }));
+    }
 
     // Fetch File Tree
     const { data: treeData } = await octokit.rest.git.getTree({
@@ -216,19 +233,19 @@ app.post("/api/analyze", async (req, res) => {
     const coreFilePaths = files.filter(f => {
       if (f.type !== "blob") return false;
       const p = f.path.toLowerCase();
-      return p === "readme.md" || 
-             p === "package.json" || 
-             p === "requirements.txt" || 
-             p === "dockerfile" ||
-             p.match(/^(src|app|lib|main)\/(index|main|app|server)\.(js|ts|py|go|java|cpp|c)$/) ||
-             p.match(/^(index|main|app|server)\.(js|ts|py|go|java|cpp|c)$/);
+      return p === "readme.md" ||
+        p === "package.json" ||
+        p === "requirements.txt" ||
+        p === "dockerfile" ||
+        p.match(/^(src|app|lib|main)\/(index|main|app|server)\.(js|ts|py|go|java|cpp|c)$/) ||
+        p.match(/^(index|main|app|server)\.(js|ts|py|go|java|cpp|c)$/);
     }).slice(0, 20);
 
     const coreFiles = await Promise.all(coreFilePaths.map(async (f) => {
       try {
         const { data: fileData } = await octokit.rest.repos.getContent({ owner, repo, path: f.path }) as any;
         const content = Buffer.from(fileData.content, "base64").toString();
-        
+
         // Store in files table
         db.prepare(`
           INSERT OR REPLACE INTO files (repo_id, path, content, language, size)
@@ -310,24 +327,112 @@ app.get("/api/repo/file", async (req, res) => {
   try {
     // Check DB first
     let file = db.prepare("SELECT * FROM files WHERE repo_id = ? AND path = ?").get(repoId, path) as any;
-    
+
     if (!file) {
       // Fetch from GitHub and store
       const [owner, repo] = (repoId as string).split("/");
       const { data: fileData } = await octokit.rest.repos.getContent({ owner, repo, path: path as string }) as any;
       const content = Buffer.from(fileData.content, "base64").toString();
-      
+
       db.prepare(`
         INSERT OR REPLACE INTO files (repo_id, path, content, language, size)
         VALUES (?, ?, ?, ?, ?)
       `).run(repoId, path, content, (path as string).split(".").pop() || "text", content.length);
-      
+
       file = { content, path };
     }
 
     const issues = analyzeFile(file.path, file.content);
     res.json({ content: file.content, issues });
   } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get("/api/contributor-network", (req, res) => {
+  const { repoId } = req.query;
+  if (!repoId) return res.status(400).json({ error: "Missing repoId" });
+
+  try {
+    const cached = db.prepare("SELECT * FROM repositories WHERE id = ?").get(repoId) as any;
+    if (!cached) return res.status(404).json({ error: "Repo not analyzed yet" });
+
+    const repoData = JSON.parse(cached.data);
+    const commits: any[] = repoData.commits || [];
+
+    // Build contributor map
+    const contributorMap: Record<string, {
+      name: string;
+      login: string | null;
+      avatarUrl: string | null;
+      commitCount: number;
+      insertions: number;
+      deletions: number;
+      firstCommit: string;
+      lastCommit: string;
+      files: Set<string>;
+    }> = {};
+
+    commits.forEach((c: any) => {
+      if (!contributorMap[c.author]) {
+        contributorMap[c.author] = {
+          name: c.author,
+          login: c.login || null,
+          avatarUrl: c.avatarUrl || null,
+          commitCount: 0,
+          insertions: 0,
+          deletions: 0,
+          firstCommit: c.date,
+          lastCommit: c.date,
+          files: new Set(),
+        };
+      }
+      const entry = contributorMap[c.author];
+      entry.commitCount++;
+      entry.insertions += c.insertions || 0;
+      entry.deletions += c.deletions || 0;
+      if (c.date < entry.firstCommit) entry.firstCommit = c.date;
+      if (c.date > entry.lastCommit) entry.lastCommit = c.date;
+      (c.filePaths || []).forEach((f: string) => entry.files.add(f));
+    });
+
+    const nodes = Object.values(contributorMap).map(c => ({
+      name: c.name,
+      login: c.login,
+      avatarUrl: c.avatarUrl,
+      commitCount: c.commitCount,
+      insertions: c.insertions,
+      deletions: c.deletions,
+      firstCommit: c.firstCommit,
+      lastCommit: c.lastCommit,
+      files: Array.from(c.files),
+    }));
+
+    // Build edges: pairs who share files
+    const edgeMap: Record<string, { source: string; target: string; sharedFiles: string[]; weight: number }> = {};
+    const authorNames = Object.keys(contributorMap);
+
+    for (let i = 0; i < authorNames.length; i++) {
+      for (let j = i + 1; j < authorNames.length; j++) {
+        const a = authorNames[i];
+        const b = authorNames[j];
+        const aFiles = contributorMap[a].files;
+        const bFiles = contributorMap[b].files;
+        const shared: string[] = [];
+        aFiles.forEach(f => { if (bFiles.has(f)) shared.push(f); });
+        if (shared.length > 0) {
+          const edgeId = [a, b].sort().join('||');
+          edgeMap[edgeId] = { source: a, target: b, sharedFiles: shared.slice(0, 20), weight: shared.length };
+        }
+      }
+    }
+
+    const edges = Object.values(edgeMap);
+    const topContributors = [...nodes].sort((a, b) => b.commitCount - a.commitCount).slice(0, 10);
+
+    res.json({ nodes, edges, topContributors });
+  } catch (error: any) {
+    console.error(error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -348,11 +453,11 @@ app.post("/api/repo/chat-context", async (req, res) => {
     if (!cached) return res.status(404).json({ error: "Repo not analyzed yet" });
 
     const repoData = JSON.parse(cached.data);
-    
+
     // Search in DB files
     const identifiers = question.match(/[a-zA-Z_][a-zA-Z0-9_.]*/g) || [];
     const keywords = [...new Set([...question.toLowerCase().split(/\s+/), ...identifiers])].filter(k => k.length > 3);
-    
+
     let relevantFiles: any[] = [];
     if (keywords.length > 0) {
       const searchTerms = keywords.map(k => `%${k}%`);

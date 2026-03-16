@@ -9,12 +9,12 @@ import { detectProjectType } from './lib/detector';
 import { ProjectPreview } from './components/ProjectPreview';
 import { RepositoryAssistant } from './components/RepositoryAssistant';
 import { getMetricInsight, MetricType } from './lib/insights';
-import { 
-  GitCommit, 
-  Users, 
-  Activity, 
-  AlertCircle, 
-  Play, 
+import {
+  GitCommit,
+  Users,
+  Activity,
+  AlertCircle,
+  Play,
   ChevronRight,
   Terminal,
   FileCode,
@@ -31,17 +31,18 @@ import { AnimatedCinematized } from './components/AnimatedCinematized';
 import { DirectoryExplorer } from './components/DirectoryExplorer';
 import { CodeViewer } from './components/CodeViewer';
 import { CommitGraph } from './components/CommitGraph';
+import { ContributorNetwork } from './components/ContributorNetwork';
 
 export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [repoData, setRepoData] = useState<RepoData | null>(null);
   const [narrative, setNarrative] = useState<RepoNarrative | null>(null);
   const [isCinematicMode, setIsCinematicMode] = useState(false);
-  const [activeTab, setActiveTab] = useState<'analytics' | 'preview' | 'assistant' | 'explorer'>('analytics');
+  const [activeTab, setActiveTab] = useState<'analytics' | 'preview' | 'assistant' | 'explorer' | 'contributors'>('analytics');
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [selectedCommit, setSelectedCommit] = useState<Commit | null>(null);
   const [error, setError] = useState<string | null>(null);
-  
+
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -55,13 +56,13 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url }),
       });
-      
+
       const result = await response.json();
       if (result.error) throw new Error(result.error);
-      
+
       const detected = detectProjectType(result.data);
       const previewSummary = await generateProjectSummary(result.data);
-      
+
       const enrichedData = {
         ...result.data,
         preview: {
@@ -75,19 +76,19 @@ export default function App() {
       if (!result.narrative) {
         const story = await generateRepoNarrative(enrichedData);
         setNarrative(story);
-        
+
         await fetch('/api/save-narrative', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            repoId: `${result.data.owner}/${result.data.repoName}`, 
-            narrative: story 
+          body: JSON.stringify({
+            repoId: `${result.data.owner}/${result.data.repoName}`,
+            narrative: story
           }),
         });
       } else {
         setNarrative(result.narrative);
       }
-      
+
       navigate('/dashboard');
     } catch (err: any) {
       console.error(err);
@@ -124,9 +125,9 @@ export default function App() {
             </div>
             <span className="font-bold tracking-tight text-lg">GitInsight AI</span>
           </div>
-          
+
           {repoData && location.pathname === '/dashboard' && (
-            <button 
+            <button
               onClick={handleReset}
               className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-zinc-500 hover:text-emerald-500 transition-colors"
             >
@@ -135,9 +136,9 @@ export default function App() {
             </button>
           )}
         </div>
-        
+
         {repoData && location.pathname === '/dashboard' && (
-          <button 
+          <button
             onClick={() => setIsCinematicMode(true)}
             className="flex items-center gap-2 px-4 py-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-full text-sm font-medium transition-all"
           >
@@ -154,7 +155,7 @@ export default function App() {
               <CodeBackground />
               <div className="text-center mb-12 space-y-4 relative z-10">
                 <div className="min-h-[120px] md:min-h-[160px] flex flex-col justify-center">
-                  <motion.h1 
+                  <motion.h1
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     className="text-5xl md:text-7xl font-bold tracking-tighter"
@@ -162,7 +163,7 @@ export default function App() {
                     Your Code, <AnimatedCinematized />
                   </motion.h1>
                 </div>
-                <motion.p 
+                <motion.p
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.1 }}
@@ -171,7 +172,7 @@ export default function App() {
                   Transform raw Git history into a compelling narrative. Analyze churn, sentiment, and major events with AI.
                 </motion.p>
               </div>
-              <motion.div 
+              <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.2 }}
@@ -187,13 +188,13 @@ export default function App() {
               </motion.div>
             </div>
           } />
-          
+
           <Route path="/dashboard" element={
             repoData ? (
               <div className="space-y-8 animate-in fade-in duration-700">
                 {/* Tabs */}
                 <div className="flex items-center gap-1 bg-zinc-900/50 p-1 rounded-xl border border-zinc-800 w-fit">
-                  <button 
+                  <button
                     onClick={() => setActiveTab('analytics')}
                     className={cn(
                       "px-6 py-2 rounded-lg text-sm font-bold transition-all",
@@ -202,7 +203,7 @@ export default function App() {
                   >
                     Analytics
                   </button>
-                  <button 
+                  <button
                     onClick={() => setActiveTab('preview')}
                     className={cn(
                       "px-6 py-2 rounded-lg text-sm font-bold transition-all",
@@ -211,7 +212,7 @@ export default function App() {
                   >
                     Project Preview
                   </button>
-                  <button 
+                  <button
                     onClick={() => setActiveTab('assistant')}
                     className={cn(
                       "px-6 py-2 rounded-lg text-sm font-bold transition-all",
@@ -220,7 +221,7 @@ export default function App() {
                   >
                     Repository Assistant
                   </button>
-                  <button 
+                  <button
                     onClick={() => setActiveTab('explorer')}
                     className={cn(
                       "px-6 py-2 rounded-lg text-sm font-bold transition-all",
@@ -229,34 +230,43 @@ export default function App() {
                   >
                     Directory Explorer
                   </button>
+                  <button
+                    onClick={() => setActiveTab('contributors')}
+                    className={cn(
+                      "px-6 py-2 rounded-lg text-sm font-bold transition-all",
+                      activeTab === 'contributors' ? "bg-emerald-600 text-white shadow-lg" : "text-zinc-500 hover:text-zinc-300"
+                    )}
+                  >
+                    Contributors
+                  </button>
                 </div>
 
                 {activeTab === 'analytics' ? (
                   <div className="space-y-8">
                     {/* Hero Stats */}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                      <StatCard 
+                      <StatCard
                         icon={<GitCommit className="w-5 h-5 text-blue-500" />}
                         label="Total Commits"
                         value={repoData.totalCommits.toString()}
                         numericValue={repoData.totalCommits}
                         type="commits"
                       />
-                      <StatCard 
+                      <StatCard
                         icon={<Users className="w-5 h-5 text-purple-500" />}
                         label="Contributors"
                         value={repoData.contributors.length.toString()}
                         numericValue={repoData.contributors.length}
                         type="contributors"
                       />
-                      <StatCard 
+                      <StatCard
                         icon={<Activity className="w-5 h-5 text-emerald-500" />}
                         label="Churn Rate"
                         value={`${repoData.metrics.churnRate.toFixed(1)}%`}
                         numericValue={repoData.metrics.churnRate}
                         type="churn"
                       />
-                      <StatCard 
+                      <StatCard
                         icon={<AlertCircle className="w-5 h-5 text-amber-500" />}
                         label="Refactors"
                         value={repoData.metrics.refactorCount.toString()}
@@ -274,13 +284,13 @@ export default function App() {
                             <h2 className="text-xl font-bold">The Narrative</h2>
                             <div className="px-2 py-1 bg-emerald-500/10 text-emerald-500 text-[10px] font-bold uppercase rounded tracking-widest">AI Generated</div>
                           </div>
-                          
+
                           {narrative ? (
                             <div className="space-y-6">
                               <p className="text-zinc-400 leading-relaxed italic font-serif text-lg">
                                 "{narrative.introduction}"
                               </p>
-                              
+
                               <div className="space-y-4">
                                 <h3 className="text-sm font-bold uppercase tracking-widest text-zinc-500 flex items-center gap-2">
                                   <TrendingUp className="w-4 h-4" />
@@ -321,12 +331,12 @@ export default function App() {
                       {/* Visualization Panel */}
                       <div className="lg:col-span-2 space-y-8">
                         <Charts commits={repoData.commits} contributors={repoData.contributors} />
-                        
-                        <CommitGraph 
-                          commits={repoData.commits} 
+
+                        <CommitGraph
+                          commits={repoData.commits}
                           onCommitClick={(commit) => setSelectedCommit(commit)}
                         />
-                        
+
                         <div className="bg-zinc-900/50 border border-zinc-800 rounded-3xl overflow-hidden">
                           <div className="p-6 border-b border-zinc-800 flex items-center justify-between">
                             <h3 className="font-bold">Recent Commit History</h3>
@@ -339,7 +349,7 @@ export default function App() {
                                   <div className={cn(
                                     "w-2 h-2 rounded-full",
                                     commit.sentiment === 'positive' ? "bg-emerald-500" :
-                                    commit.sentiment === 'negative' ? "bg-red-500" : "bg-zinc-600"
+                                      commit.sentiment === 'negative' ? "bg-red-500" : "bg-zinc-600"
                                   )} />
                                   <div>
                                     <p className="text-sm font-medium text-zinc-200 line-clamp-1">{commit.message}</p>
@@ -360,18 +370,20 @@ export default function App() {
                   <ProjectPreview repoData={repoData} />
                 ) : activeTab === 'assistant' ? (
                   <RepositoryAssistant repoData={repoData} />
+                ) : activeTab === 'contributors' ? (
+                  <ContributorNetwork repoData={repoData} />
                 ) : (
                   <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-[700px]">
                     <div className="lg:col-span-1 h-full">
-                      <DirectoryExplorer 
-                        files={repoData.files || []} 
+                      <DirectoryExplorer
+                        files={repoData.files || []}
                         onFileSelect={(path) => setSelectedFilePath(path)}
                         selectedPath={selectedFilePath || undefined}
                       />
                     </div>
                     <div className="lg:col-span-3 h-full">
                       {selectedFilePath ? (
-                        <CodeViewer 
+                        <CodeViewer
                           repoId={`${repoData.owner}/${repoData.repoName}`}
                           path={selectedFilePath}
                           onClose={() => setSelectedFilePath(null)}
@@ -394,22 +406,22 @@ export default function App() {
       {/* Overlays & Panels */}
       <AnimatePresence>
         {isCinematicMode && narrative && (
-          <CinematicOverlay 
-            narrative={narrative} 
-            onClose={() => setIsCinematicMode(false)} 
+          <CinematicOverlay
+            narrative={narrative}
+            onClose={() => setIsCinematicMode(false)}
           />
         )}
 
         {selectedCommit && (
           <>
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setSelectedCommit(null)}
               className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60]"
             />
-            <motion.div 
+            <motion.div
               initial={{ x: '100%' }}
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
@@ -422,11 +434,11 @@ export default function App() {
                     <div className={cn(
                       "w-3 h-3 rounded-full",
                       selectedCommit.sentiment === 'positive' ? "bg-emerald-500" :
-                      selectedCommit.sentiment === 'negative' ? "bg-rose-500" : "bg-zinc-500"
+                        selectedCommit.sentiment === 'negative' ? "bg-rose-500" : "bg-zinc-500"
                     )} />
                     <span className="text-xs font-mono text-zinc-500 uppercase tracking-widest">Commit Detail</span>
                   </div>
-                  <button 
+                  <button
                     onClick={() => setSelectedCommit(null)}
                     className="p-2 hover:bg-zinc-800 rounded-lg transition-colors"
                   >
@@ -483,12 +495,12 @@ export default function App() {
                     AI Sentiment Analysis
                   </div>
                   <p className="text-sm text-zinc-300 leading-relaxed">
-                    This commit has been classified as <span className="font-bold text-emerald-400 capitalize">{selectedCommit.sentiment}</span>. 
-                    {selectedCommit.sentiment === 'positive' ? 
+                    This commit has been classified as <span className="font-bold text-emerald-400 capitalize">{selectedCommit.sentiment}</span>.
+                    {selectedCommit.sentiment === 'positive' ?
                       " It appears to be a constructive contribution, likely adding new features or improving existing code quality." :
-                      selectedCommit.sentiment === 'negative' ? 
-                      " It might be addressing a bug or a regression, or the commit message indicates a potential issue." :
-                      " It seems to be a standard maintenance or structural update."
+                      selectedCommit.sentiment === 'negative' ?
+                        " It might be addressing a bug or a regression, or the commit message indicates a potential issue." :
+                        " It seems to be a standard maintenance or structural update."
                     }
                   </p>
                 </div>
@@ -511,7 +523,7 @@ function StatCard({ icon, label, value, numericValue, type }: { icon: React.Reac
     churn: "How often code is being rewritten or deleted. High churn might mean a lot of changes or 're-doing' work.",
     refactors: "Cleaning up and improving the existing code without changing what it does. Like tidying up a room."
   };
-  
+
   return (
     <div className="bg-zinc-900/50 border border-zinc-800 p-6 rounded-2xl space-y-4 flex flex-col justify-between relative group/card">
       <div className="space-y-4">
@@ -528,7 +540,7 @@ function StatCard({ icon, label, value, numericValue, type }: { icon: React.Reac
             )}>
               {insight.status}
             </div>
-            <button 
+            <button
               onMouseEnter={() => setShowInfo(true)}
               onMouseLeave={() => setShowInfo(false)}
               className="p-1 text-zinc-500 hover:text-emerald-500 transition-colors"
@@ -546,7 +558,7 @@ function StatCard({ icon, label, value, numericValue, type }: { icon: React.Reac
 
         <AnimatePresence>
           {showInfo && (
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, y: 5 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 5 }}
