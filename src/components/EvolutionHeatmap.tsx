@@ -31,31 +31,43 @@ export function EvolutionHeatmap({ repoData, onFileClick }: EvolutionHeatmapProp
     const activities: Record<string, FileActivity> = {};
     const commitsUpToNow = sortedCommits.slice(0, currentTimeIndex + 1);
     
-    // In a real app, we'd have actual file-level diffs per commit.
-    // For this demo, we'll simulate the state of files at the selected point in time.
-    const files = repoData.files || [];
-    
-    files.forEach((path: string) => {
-      const seed = path.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-      
-      // Simulate activity based on how many commits have passed
-      // We'll use the currentTimeIndex to scale the metrics
-      const progress = (currentTimeIndex + 1) / sortedCommits.length;
-      
-      const commitCount = Math.floor((seed % 20) * progress) + 1;
-      const ins = Math.floor((seed % 1000) * progress * 10);
-      const dels = Math.floor((seed % 800) * progress * 8);
-      const churn = ins + dels;
-      
+    // Initialize
+    (repoData.files || []).forEach((path: string) => {
       activities[path] = {
         path,
-        commits: commitCount,
-        insertions: ins,
-        deletions: dels,
-        churn,
-        lastModified: sortedCommits[currentTimeIndex]?.date || new Date().toISOString(),
-        isDebt: churn > 5000 && commitCount > 15
+        commits: 0,
+        insertions: 0,
+        deletions: 0,
+        churn: 0,
+        lastModified: '',
+        isDebt: false
       };
+    });
+
+    // Accumulate real data
+    commitsUpToNow.forEach(commit => {
+      // In a real scenario we'd have exact file hunks. Here we distribute the commit's total additions/deletions 
+      // evenly across the modified files to create a realistic churn heatmap relative to the commit size.
+      const modifiedFiles = commit.modifiedFiles || commit.filePaths || [];
+      if (modifiedFiles.length > 0) {
+        const insPerFile = Math.ceil((commit.insertions || 0) / modifiedFiles.length);
+        const delPerFile = Math.ceil((commit.deletions || 0) / modifiedFiles.length);
+
+        modifiedFiles.forEach((file: string) => {
+          if (activities[file]) {
+            activities[file].commits += 1;
+            activities[file].insertions += insPerFile;
+            activities[file].deletions += delPerFile;
+            activities[file].churn += (insPerFile + delPerFile);
+            activities[file].lastModified = commit.date;
+          }
+        });
+      }
+    });
+
+    // Calculate technical debt flag based on actual accumulated stats
+    Object.values(activities).forEach(act => {
+      act.isDebt = (act.churn > 200 && act.commits > 10);
     });
 
     return Object.values(activities).sort((a, b) => b.churn - a.churn);

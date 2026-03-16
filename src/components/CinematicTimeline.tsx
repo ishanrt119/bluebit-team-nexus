@@ -78,13 +78,20 @@ function CommitSphere({ commit, position, active }: CommitNodeProps) {
     return '#f59e0b';
   }, [commit.message]);
 
+  const loc = (commit.insertions || 0) + (commit.deletions || 0);
+  // Base scale is 0.2, massive commits can go up to 3x larger
+  const baseScale = Math.min(3, 0.2 + (loc / 500)); 
+  const activeScale = Math.min(4, 0.8 + (loc / 300));
+
   useFrame((state) => {
     if (meshRef.current) {
       meshRef.current.rotation.y += 0.01;
       meshRef.current.rotation.x += 0.005;
       if (active) {
-        const s = 1 + Math.sin(state.clock.elapsedTime * 4) * 0.05;
+        const s = activeScale + Math.sin(state.clock.elapsedTime * 4) * (0.05 * activeScale);
         meshRef.current.scale.set(s, s, s);
+      } else {
+        meshRef.current.scale.set(baseScale, baseScale, baseScale);
       }
     }
   });
@@ -93,7 +100,7 @@ function CommitSphere({ commit, position, active }: CommitNodeProps) {
     <group position={position}>
       <Float speed={5} rotationIntensity={1} floatIntensity={1}>
         <mesh ref={meshRef}>
-          <sphereGeometry args={[active ? 0.8 : 0.2, 64, 64]} />
+          <sphereGeometry args={[1, 64, 64]} />
           <MeshDistortMaterial 
             color={color} 
             speed={active ? 3 : 1} 
@@ -105,7 +112,7 @@ function CommitSphere({ commit, position, active }: CommitNodeProps) {
       </Float>
       
       {active && (
-        <pointLight intensity={10} distance={10} color={color} />
+        <pointLight intensity={10} distance={10 + activeScale*2} color={color} />
       )}
     </group>
   );

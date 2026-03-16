@@ -123,18 +123,34 @@ export function FilterPanel({
           <Clock className="w-3 h-3" />
           Time Range
         </label>
-        <div className="px-2 pt-2">
-          <input 
-            type="range"
-            min={0}
-            max={maxTime}
-            value={timeRange[1]}
-            onChange={(e) => onTimeRangeChange([timeRange[0], parseInt(e.target.value)])}
-            className="w-full h-1 bg-zinc-800 rounded-full appearance-none cursor-pointer accent-emerald-500"
-          />
-          <div className="flex justify-between mt-2 text-[9px] font-bold text-zinc-600 uppercase tracking-widest">
-            <span>Start</span>
-            <span>{Math.round((timeRange[1] / maxTime) * 100)}%</span>
+        <div className="px-2 pt-2 space-y-4">
+          <div>
+            <div className="flex justify-between mb-1 text-[9px] font-bold text-zinc-500 uppercase tracking-widest">
+              <span>Start</span>
+              <span>{Math.round((timeRange[0] / maxTime) * 100)}%</span>
+            </div>
+            <input 
+              type="range"
+              min={0}
+              max={maxTime}
+              value={timeRange[0]}
+              onChange={(e) => onTimeRangeChange([parseInt(e.target.value), timeRange[1]])}
+              className="w-full h-1 bg-zinc-800 rounded-full appearance-none cursor-pointer accent-emerald-500"
+            />
+          </div>
+          <div>
+            <div className="flex justify-between mb-1 text-[9px] font-bold text-zinc-500 uppercase tracking-widest">
+              <span>End</span>
+              <span>{Math.round((timeRange[1] / maxTime) * 100)}%</span>
+            </div>
+            <input 
+              type="range"
+              min={0}
+              max={maxTime}
+              value={timeRange[1]}
+              onChange={(e) => onTimeRangeChange([timeRange[0], parseInt(e.target.value)])}
+              className="w-full h-1 bg-zinc-800 rounded-full appearance-none cursor-pointer accent-emerald-500"
+            />
           </div>
         </div>
       </div>
