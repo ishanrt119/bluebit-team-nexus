@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { RepoInput } from './components/RepoInput';
 import { Charts } from './components/Charts';
@@ -22,7 +22,8 @@ import {
   ArrowLeft,
   Info,
   X,
-  Sparkles
+  Sparkles,
+  ExternalLink
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -31,19 +32,56 @@ import { AnimatedCinematized } from './components/AnimatedCinematized';
 import { DirectoryExplorer } from './components/DirectoryExplorer';
 import { CodeViewer } from './components/CodeViewer';
 import { CommitGraph } from './components/CommitGraph';
+import { ForceGraph } from './components/ForceGraph';
+import { EvolutionHeatmap } from './components/EvolutionHeatmap';
+import { CinematicTimeline } from './components/CinematicTimeline';
+import { FilterPanel } from './components/FilterPanel';
+import { DiffViewer } from './components/DiffViewer';
+import { BlameViewer } from './components/BlameViewer';
+import { BranchTree } from './components/BranchTree';
 
 export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [repoData, setRepoData] = useState<RepoData | null>(null);
   const [narrative, setNarrative] = useState<RepoNarrative | null>(null);
   const [isCinematicMode, setIsCinematicMode] = useState(false);
-  const [activeTab, setActiveTab] = useState<'analytics' | 'preview' | 'assistant' | 'explorer'>('analytics');
+  const [activeTab, setActiveTab] = useState<'analytics' | 'timeline' | 'heatmap' | 'graph' | 'branches' | 'preview' | 'assistant' | 'explorer'>('analytics');
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [selectedCommit, setSelectedCommit] = useState<Commit | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Filter State
+  const [selectedAuthors, setSelectedAuthors] = useState<string[]>([]);
+  const [selectedFileTypes, setSelectedFileTypes] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [timeRange, setTimeRange] = useState<[number, number]>([0, 100]);
   
+  // Details State
+  const [viewMode, setViewMode] = useState<'details' | 'diff' | 'blame'>('details');
+  const [diffPatch, setDiffPatch] = useState<string | null>(null);
+
   const navigate = useNavigate();
   const location = useLocation();
+
+  const handleCommitClick = (commit: Commit) => {
+    setSelectedCommit(commit);
+    setViewMode('details');
+  };
+
+  const handleFileClick = (path: string) => {
+    if (!repoData) return;
+    // Find the latest commit that modified this file
+    const latestCommit = repoData.commits.find(c => c.modifiedFiles?.includes(path));
+    if (latestCommit) {
+      setSelectedCommit(latestCommit);
+      setSelectedFilePath(path);
+      setViewMode('details');
+    } else {
+      // Fallback: just open the explorer if no commit found
+      setSelectedFilePath(path);
+      setActiveTab('explorer');
+    }
+  };
 
   const handleAnalyze = async (url: string) => {
     setIsLoading(true);
@@ -103,7 +141,74 @@ export default function App() {
     setIsCinematicMode(false);
     setActiveTab('analytics');
     setSelectedFilePath(null);
+    setSelectedCommit(null);
+    setSelectedAuthors([]);
+    setSelectedFileTypes([]);
+    setSearchQuery('');
+    setTimeRange([0, 100]);
     navigate('/');
+  };
+
+  // Computed Filtered Data
+  const filteredCommits = useMemo(() => {
+    if (!repoData) return [];
+    
+    return repoData.commits.filter((commit, index) => {
+      // Author Filter
+      if (selectedAuthors.length > 0 && !selectedAuthors.includes(commit.author)) return false;
+      
+      // Keyword Filter
+      if (searchQuery && !commit.message.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+      
+      // File Type Filter
+      if (selectedFileTypes.length > 0) {
+        const hasFileType = commit.modifiedFiles?.some(file => {
+          const ext = '.' + file.split('.').pop();
+          return selectedFileTypes.includes(ext);
+        });
+        if (!hasFileType) return false;
+      }
+      
+      // Time Range Filter (by index for simplicity in this demo)
+      // Note: Commits are usually sorted newest to oldest, so index 0 is 100% time
+      const progress = (index / repoData.commits.length) * 100;
+      const timeProgress = 100 - progress;
+      if (timeProgress < timeRange[0] || timeProgress > timeRange[1]) return false;
+      
+      return true;
+    });
+  }, [repoData, selectedAuthors, selectedFileTypes, searchQuery, timeRange]);
+
+  const authorsList = useMemo(() => {
+    if (!repoData) return [];
+    const counts: Record<string, number> = {};
+    repoData.commits.forEach(c => {
+      counts[c.author] = (counts[c.author] || 0) + 1;
+    });
+    return Object.entries(counts)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [repoData]);
+
+  const availableFileTypes = useMemo(() => {
+    if (!repoData) return [];
+    const exts = new Set<string>();
+    repoData.files?.forEach(file => {
+      const parts = file.split('.');
+      if (parts.length > 1) exts.add('.' + parts.pop());
+    });
+    return Array.from(exts).sort();
+  }, [repoData]);
+
+  const fetchDiff = async (sha: string, path: string) => {
+    try {
+      const res = await fetch(`/api/repo/diff?repoId=${repoData?.owner}/${repoData?.repoName}&sha=${sha}&path=${path}`);
+      const data = await res.json();
+      setDiffPatch(data.patch);
+      setViewMode('diff');
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   // Redirect if no data on dashboard
@@ -147,7 +252,10 @@ export default function App() {
         )}
       </nav>
 
-      <main className="max-w-7xl mx-auto px-6 py-12">
+      <main className={cn(
+        "mx-auto transition-all duration-500",
+        location.pathname === '/dashboard' ? "max-w-full px-0 py-0" : "max-w-7xl px-6 py-12"
+      )}>
         <Routes>
           <Route path="/" element={
             <div className="py-20 relative">
@@ -190,201 +298,439 @@ export default function App() {
           
           <Route path="/dashboard" element={
             repoData ? (
-              <div className="space-y-8 animate-in fade-in duration-700">
-                {/* Tabs */}
-                <div className="flex items-center gap-1 bg-zinc-900/50 p-1 rounded-xl border border-zinc-800 w-fit">
-                  <button 
-                    onClick={() => setActiveTab('analytics')}
-                    className={cn(
-                      "px-6 py-2 rounded-lg text-sm font-bold transition-all",
-                      activeTab === 'analytics' ? "bg-emerald-600 text-white shadow-lg" : "text-zinc-500 hover:text-zinc-300"
-                    )}
-                  >
-                    Analytics
-                  </button>
-                  <button 
-                    onClick={() => setActiveTab('preview')}
-                    className={cn(
-                      "px-6 py-2 rounded-lg text-sm font-bold transition-all",
-                      activeTab === 'preview' ? "bg-emerald-600 text-white shadow-lg" : "text-zinc-500 hover:text-zinc-300"
-                    )}
-                  >
-                    Project Preview
-                  </button>
-                  <button 
-                    onClick={() => setActiveTab('assistant')}
-                    className={cn(
-                      "px-6 py-2 rounded-lg text-sm font-bold transition-all",
-                      activeTab === 'assistant' ? "bg-emerald-600 text-white shadow-lg" : "text-zinc-500 hover:text-zinc-300"
-                    )}
-                  >
-                    Repository Assistant
-                  </button>
-                  <button 
-                    onClick={() => setActiveTab('explorer')}
-                    className={cn(
-                      "px-6 py-2 rounded-lg text-sm font-bold transition-all",
-                      activeTab === 'explorer' ? "bg-emerald-600 text-white shadow-lg" : "text-zinc-500 hover:text-zinc-300"
-                    )}
-                  >
-                    Directory Explorer
-                  </button>
+              <div className="flex h-[calc(100vh-64px)] overflow-hidden">
+                {/* Left Sidebar: Filters */}
+                <FilterPanel 
+                  authors={authorsList}
+                  fileTypes={availableFileTypes}
+                  selectedAuthors={selectedAuthors}
+                  selectedFileTypes={selectedFileTypes}
+                  searchQuery={searchQuery}
+                  timeRange={timeRange}
+                  maxTime={100}
+                  onAuthorToggle={(author) => {
+                    setSelectedAuthors(prev => 
+                      prev.includes(author) ? prev.filter(a => a !== author) : [...prev, author]
+                    );
+                  }}
+                  onFileTypeToggle={(ext) => {
+                    setSelectedFileTypes(prev => 
+                      prev.includes(ext) ? prev.filter(e => e !== ext) : [...prev, ext]
+                    );
+                  }}
+                  onSearchChange={setSearchQuery}
+                  onTimeRangeChange={setTimeRange}
+                  onReset={() => {
+                    setSelectedAuthors([]);
+                    setSelectedFileTypes([]);
+                    setSearchQuery('');
+                    setTimeRange([0, 100]);
+                  }}
+                />
+
+                {/* Center: Visualizations */}
+                <div className="flex-1 overflow-y-auto p-8 custom-scrollbar space-y-8">
+                  {/* Tabs */}
+                  <div className="flex items-center gap-1 bg-zinc-900/50 p-1 rounded-xl border border-zinc-800 w-fit overflow-x-auto max-w-full">
+                    {[
+                      { id: 'analytics', label: 'Analytics' },
+                      { id: 'timeline', label: 'Timeline' },
+                      { id: 'heatmap', label: 'Heatmap' },
+                      { id: 'graph', label: 'Network' },
+                      { id: 'branches', label: 'Branches' },
+                      { id: 'preview', label: 'Preview' },
+                      { id: 'assistant', label: 'Assistant' },
+                      { id: 'explorer', label: 'Explorer' }
+                    ].map(tab => (
+                      <button 
+                        key={tab.id}
+                        onClick={() => setActiveTab(tab.id as any)}
+                        className={cn(
+                          "px-6 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap",
+                          activeTab === tab.id ? "bg-emerald-600 text-white shadow-lg" : "text-zinc-500 hover:text-zinc-300"
+                        )}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {activeTab === 'analytics' && (
+                    <div className="space-y-8">
+                      {/* Hero Stats */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <StatCard 
+                          icon={<GitCommit className="w-5 h-5 text-blue-500" />}
+                          label="Total Commits"
+                          value={repoData.totalCommits.toString()}
+                          numericValue={repoData.totalCommits}
+                          type="commits"
+                        />
+                        <StatCard 
+                          icon={<Users className="w-5 h-5 text-purple-500" />}
+                          label="Contributors"
+                          value={repoData.contributors.length.toString()}
+                          numericValue={repoData.contributors.length}
+                          type="contributors"
+                        />
+                        <StatCard 
+                          icon={<Activity className="w-5 h-5 text-emerald-500" />}
+                          label="Churn Rate"
+                          value={`${repoData.metrics.churnRate.toFixed(1)}%`}
+                          numericValue={repoData.metrics.churnRate}
+                          type="churn"
+                        />
+                        <StatCard 
+                          icon={<AlertCircle className="w-5 h-5 text-amber-500" />}
+                          label="Refactors"
+                          value={repoData.metrics.refactorCount.toString()}
+                          numericValue={repoData.metrics.refactorCount}
+                          type="refactors"
+                        />
+                      </div>
+
+                      {/* Main Content Grid */}
+                      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                        {/* Narrative Panel */}
+                        <div className="lg:col-span-1 space-y-6">
+                          <div className="bg-zinc-900/50 border border-zinc-800 p-8 rounded-3xl space-y-6">
+                            <div className="flex items-center justify-between">
+                              <h2 className="text-xl font-bold">The Narrative</h2>
+                              <div className="px-2 py-1 bg-emerald-500/10 text-emerald-500 text-[10px] font-bold uppercase rounded tracking-widest">AI Generated</div>
+                            </div>
+                            
+                            {narrative ? (
+                              <div className="space-y-6">
+                                <p className="text-zinc-400 leading-relaxed italic font-serif text-lg">
+                                  "{narrative.introduction}"
+                                </p>
+                                
+                                <div className="space-y-4">
+                                  <h3 className="text-sm font-bold uppercase tracking-widest text-zinc-500 flex items-center gap-2">
+                                    <TrendingUp className="w-4 h-4" />
+                                    Key Turning Points
+                                  </h3>
+                                  <ul className="space-y-3">
+                                    {narrative.turningPoints.map((point, i) => (
+                                      <li key={i} className="flex gap-3 text-sm text-zinc-300">
+                                        <ChevronRight className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+                                        {point}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="h-40 flex items-center justify-center">
+                                <div className="animate-pulse text-zinc-600">Generating story...</div>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="bg-zinc-900/50 border border-zinc-800 p-8 rounded-3xl">
+                            <h3 className="text-sm font-bold uppercase tracking-widest text-zinc-500 mb-6 flex items-center gap-2">
+                              <FileCode className="w-4 h-4" />
+                              Major Challenges
+                            </h3>
+                            <div className="space-y-4">
+                              {narrative?.challenges.map((challenge, i) => (
+                                <div key={i} className="p-4 bg-zinc-950 border border-zinc-800 rounded-xl text-sm text-zinc-300">
+                                  {challenge}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Visualization Panel */}
+                        <div className="lg:col-span-2 space-y-8">
+                          <Charts commits={filteredCommits} contributors={repoData.contributors} />
+                          
+                          <CommitGraph 
+                            commits={filteredCommits} 
+                            onCommitClick={handleCommitClick}
+                          />
+                          
+                          <div className="bg-zinc-900/50 border border-zinc-800 rounded-3xl overflow-hidden">
+                            <div className="p-6 border-b border-zinc-800 flex items-center justify-between">
+                              <h3 className="font-bold">Filtered Commit History</h3>
+                              <span className="text-xs text-zinc-500 font-mono">{filteredCommits.length} COMMITS FOUND</span>
+                            </div>
+                            <div className="divide-y divide-zinc-800 max-h-[400px] overflow-y-auto custom-scrollbar">
+                              {filteredCommits.map((commit) => (
+                                <div 
+                                  key={commit.sha} 
+                                  onClick={() => handleCommitClick(commit)}
+                                  className={cn(
+                                    "p-4 hover:bg-zinc-800/50 transition-colors flex items-center justify-between group cursor-pointer",
+                                    selectedCommit?.sha === commit.sha && "bg-emerald-500/5 border-l-2 border-emerald-500"
+                                  )}
+                                >
+                                  <div className="flex items-center gap-4">
+                                    <div className={cn(
+                                      "w-2 h-2 rounded-full",
+                                      commit.sentiment === 'positive' ? "bg-emerald-500" :
+                                      commit.sentiment === 'negative' ? "bg-red-500" : "bg-zinc-600"
+                                    )} />
+                                    <div>
+                                      <p className="text-sm font-medium text-zinc-200 line-clamp-1">{commit.message}</p>
+                                      <p className="text-xs text-zinc-500">{commit.author} • {new Date(commit.date).toLocaleDateString()}</p>
+                                    </div>
+                                  </div>
+                                  <code className="text-[10px] font-mono text-zinc-600 group-hover:text-zinc-400 transition-colors">
+                                    {commit.sha.substring(0, 7)}
+                                  </code>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {activeTab === 'timeline' && (
+                    <CinematicTimeline commits={filteredCommits} />
+                  )}
+
+                  {activeTab === 'heatmap' && (
+                    <EvolutionHeatmap 
+                      repoData={{ ...repoData, commits: filteredCommits }} 
+                      onFileClick={handleFileClick}
+                    />
+                  )}
+
+                  {activeTab === 'graph' && (
+                    <ForceGraph commits={filteredCommits} onNodeClick={handleCommitClick} />
+                  )}
+
+                  {activeTab === 'branches' && (
+                    <BranchTree 
+                      repoId={`${repoData.owner}/${repoData.repoName}`}
+                      onCommitClick={handleCommitClick}
+                    />
+                  )}
+
+                  {activeTab === 'preview' && (
+                    <ProjectPreview repoData={repoData} />
+                  )}
+
+                  {activeTab === 'assistant' && (
+                    <RepositoryAssistant repoData={repoData} />
+                  )}
+
+                  {activeTab === 'explorer' && (
+                    <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-[700px]">
+                      <div className="lg:col-span-1 h-full">
+                        <DirectoryExplorer 
+                          files={repoData.files || []} 
+                          onFileSelect={(path) => {
+                            setSelectedFilePath(path);
+                            if (selectedCommit) {
+                              fetchDiff(selectedCommit.sha, path);
+                            }
+                          }}
+                          selectedPath={selectedFilePath || undefined}
+                        />
+                      </div>
+                      <div className="lg:col-span-3 h-full">
+                        {selectedFilePath ? (
+                          <CodeViewer 
+                            repoId={`${repoData.owner}/${repoData.repoName}`}
+                            path={selectedFilePath}
+                            onClose={() => setSelectedFilePath(null)}
+                          />
+                        ) : (
+                          <div className="h-full flex flex-col items-center justify-center bg-zinc-900/30 border border-zinc-800 rounded-xl border-dashed opacity-50">
+                            <FileCode className="w-12 h-12 mb-4 text-zinc-700" />
+                            <p className="text-sm">Select a file from the explorer to view its content and analysis.</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                {activeTab === 'analytics' ? (
-                  <div className="space-y-8">
-                    {/* Hero Stats */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                      <StatCard 
-                        icon={<GitCommit className="w-5 h-5 text-blue-500" />}
-                        label="Total Commits"
-                        value={repoData.totalCommits.toString()}
-                        numericValue={repoData.totalCommits}
-                        type="commits"
-                      />
-                      <StatCard 
-                        icon={<Users className="w-5 h-5 text-purple-500" />}
-                        label="Contributors"
-                        value={repoData.contributors.length.toString()}
-                        numericValue={repoData.contributors.length}
-                        type="contributors"
-                      />
-                      <StatCard 
-                        icon={<Activity className="w-5 h-5 text-emerald-500" />}
-                        label="Churn Rate"
-                        value={`${repoData.metrics.churnRate.toFixed(1)}%`}
-                        numericValue={repoData.metrics.churnRate}
-                        type="churn"
-                      />
-                      <StatCard 
-                        icon={<AlertCircle className="w-5 h-5 text-amber-500" />}
-                        label="Refactors"
-                        value={repoData.metrics.refactorCount.toString()}
-                        numericValue={repoData.metrics.refactorCount}
-                        type="refactors"
-                      />
-                    </div>
-
-                    {/* Main Content Grid */}
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                      {/* Narrative Panel */}
-                      <div className="lg:col-span-1 space-y-6">
-                        <div className="bg-zinc-900/50 border border-zinc-800 p-8 rounded-3xl space-y-6">
-                          <div className="flex items-center justify-between">
-                            <h2 className="text-xl font-bold">The Narrative</h2>
-                            <div className="px-2 py-1 bg-emerald-500/10 text-emerald-500 text-[10px] font-bold uppercase rounded tracking-widest">AI Generated</div>
+                {/* Right Sidebar: Details on Demand */}
+                <AnimatePresence>
+                  {selectedCommit && (
+                    <motion.div 
+                      initial={{ x: 400, opacity: 0 }}
+                      animate={{ x: 0, opacity: 1 }}
+                      exit={{ x: 400, opacity: 0 }}
+                      className="w-96 bg-zinc-900 border-l border-zinc-800 flex flex-col shadow-2xl z-30"
+                    >
+                      <div className="p-6 border-b border-zinc-800 flex items-center justify-between bg-zinc-900/50 backdrop-blur-md sticky top-0">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+                            <GitCommit className="w-4 h-4 text-emerald-500" />
                           </div>
-                          
-                          {narrative ? (
-                            <div className="space-y-6">
-                              <p className="text-zinc-400 leading-relaxed italic font-serif text-lg">
-                                "{narrative.introduction}"
-                              </p>
-                              
-                              <div className="space-y-4">
-                                <h3 className="text-sm font-bold uppercase tracking-widest text-zinc-500 flex items-center gap-2">
-                                  <TrendingUp className="w-4 h-4" />
-                                  Key Turning Points
-                                </h3>
-                                <ul className="space-y-3">
-                                  {narrative.turningPoints.map((point, i) => (
-                                    <li key={i} className="flex gap-3 text-sm text-zinc-300">
-                                      <ChevronRight className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-                                      {point}
-                                    </li>
-                                  ))}
-                                </ul>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="h-40 flex items-center justify-center">
-                              <div className="animate-pulse text-zinc-600">Generating story...</div>
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="bg-zinc-900/50 border border-zinc-800 p-8 rounded-3xl">
-                          <h3 className="text-sm font-bold uppercase tracking-widest text-zinc-500 mb-6 flex items-center gap-2">
-                            <FileCode className="w-4 h-4" />
-                            Major Challenges
-                          </h3>
-                          <div className="space-y-4">
-                            {narrative?.challenges.map((challenge, i) => (
-                              <div key={i} className="p-4 bg-zinc-950 border border-zinc-800 rounded-xl text-sm text-zinc-300">
-                                {challenge}
-                              </div>
-                            ))}
+                          <div>
+                            <h3 className="text-sm font-bold">Commit Details</h3>
+                            <p className="text-[10px] font-mono text-zinc-500">{selectedCommit.sha.substring(0, 12)}</p>
                           </div>
                         </div>
+                        <button 
+                          onClick={() => setSelectedCommit(null)}
+                          className="p-2 hover:bg-zinc-800 rounded-full transition-colors"
+                        >
+                          <X className="w-4 h-4 text-zinc-500" />
+                        </button>
                       </div>
 
-                      {/* Visualization Panel */}
-                      <div className="lg:col-span-2 space-y-8">
-                        <Charts commits={repoData.commits} contributors={repoData.contributors} />
-                        
-                        <CommitGraph 
-                          commits={repoData.commits} 
-                          onCommitClick={(commit) => setSelectedCommit(commit)}
-                        />
-                        
-                        <div className="bg-zinc-900/50 border border-zinc-800 rounded-3xl overflow-hidden">
-                          <div className="p-6 border-b border-zinc-800 flex items-center justify-between">
-                            <h3 className="font-bold">Recent Commit History</h3>
-                            <span className="text-xs text-zinc-500 font-mono">LATEST 20 COMMITS</span>
-                          </div>
-                          <div className="divide-y divide-zinc-800">
-                            {repoData.commits.slice(0, 10).map((commit) => (
-                              <div key={commit.sha} className="p-4 hover:bg-zinc-800/50 transition-colors flex items-center justify-between group">
-                                <div className="flex items-center gap-4">
-                                  <div className={cn(
-                                    "w-2 h-2 rounded-full",
-                                    commit.sentiment === 'positive' ? "bg-emerald-500" :
-                                    commit.sentiment === 'negative' ? "bg-red-500" : "bg-zinc-600"
-                                  )} />
-                                  <div>
-                                    <p className="text-sm font-medium text-zinc-200 line-clamp-1">{commit.message}</p>
-                                    <p className="text-xs text-zinc-500">{commit.author} • {new Date(commit.date).toLocaleDateString()}</p>
+                      <div className="flex border-b border-zinc-800">
+                        {[
+                          { id: 'details', label: 'Overview' },
+                          { id: 'diff', label: 'Diff' },
+                          { id: 'blame', label: 'Blame' }
+                        ].map(mode => (
+                          <button
+                            key={mode.id}
+                            onClick={() => setViewMode(mode.id as any)}
+                            className={cn(
+                              "flex-1 py-3 text-[10px] font-bold uppercase tracking-widest transition-all border-b-2",
+                              viewMode === mode.id 
+                                ? "text-emerald-500 border-emerald-500 bg-emerald-500/5" 
+                                : "text-zinc-500 border-transparent hover:text-zinc-300"
+                            )}
+                          >
+                            {mode.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="flex-1 overflow-y-auto custom-scrollbar">
+                        {viewMode === 'details' && (
+                          <div className="p-6 space-y-8">
+                            <div className="space-y-4">
+                              <p className="text-lg font-medium leading-tight text-zinc-100">{selectedCommit.message}</p>
+                              <div className="flex items-center gap-3 p-3 bg-zinc-950 border border-zinc-800 rounded-xl">
+                                {selectedCommit.authorAvatar ? (
+                                  <img 
+                                    src={selectedCommit.authorAvatar} 
+                                    className="w-10 h-10 rounded-full border border-zinc-800" 
+                                    alt={selectedCommit.author}
+                                    referrerPolicy="no-referrer"
+                                  />
+                                ) : (
+                                  <div className="w-10 h-10 rounded-full bg-zinc-900 flex items-center justify-center border border-zinc-800">
+                                    <Users className="w-5 h-5 text-zinc-500" />
                                   </div>
+                                )}
+                                <div>
+                                  <p className="text-sm font-bold text-zinc-200">{selectedCommit.author}</p>
+                                  <p className="text-xs text-zinc-500">{new Date(selectedCommit.date).toLocaleString()}</p>
                                 </div>
-                                <code className="text-[10px] font-mono text-zinc-600 group-hover:text-zinc-400 transition-colors">
-                                  {commit.sha.substring(0, 7)}
-                                </code>
                               </div>
-                            ))}
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                              <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-xl space-y-1">
+                                <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Files Changed</p>
+                                <p className="text-2xl font-bold text-blue-500">{selectedCommit.filesChanged}</p>
+                              </div>
+                              <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-xl space-y-1">
+                                <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Sentiment</p>
+                                <p className={cn(
+                                  "text-lg font-bold capitalize",
+                                  selectedCommit.sentiment === 'positive' ? "text-emerald-500" :
+                                  selectedCommit.sentiment === 'negative' ? "text-red-500" : "text-zinc-500"
+                                )}>{selectedCommit.sentiment}</p>
+                              </div>
+                              <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-xl space-y-1">
+                                <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest text-emerald-500">Insertions</p>
+                                <p className="text-xl font-bold text-emerald-500">+{selectedCommit.insertions}</p>
+                              </div>
+                              <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-xl space-y-1">
+                                <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest text-red-500">Deletions</p>
+                                <p className="text-xl font-bold text-red-500">-{selectedCommit.deletions}</p>
+                              </div>
+                            </div>
+
+                            {selectedCommit.parentShas && selectedCommit.parentShas.length > 0 && (
+                              <div className="space-y-2">
+                                <h4 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Parent Commits</h4>
+                                <div className="flex flex-wrap gap-2">
+                                  {selectedCommit.parentShas.map(sha => (
+                                    <code key={sha} className="px-2 py-1 bg-zinc-950 border border-zinc-800 rounded text-[10px] text-zinc-500 font-mono">
+                                      {sha.substring(0, 12)}
+                                    </code>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            <div className="space-y-4">
+                              <h4 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Modified Files</h4>
+                              <div className="space-y-2">
+                                {selectedCommit.modifiedFiles?.map(file => (
+                                  <button 
+                                    key={file}
+                                    onClick={() => {
+                                      setSelectedFilePath(file);
+                                      fetchDiff(selectedCommit.sha, file);
+                                    }}
+                                    className={cn(
+                                      "w-full text-left p-3 rounded-lg text-xs font-mono transition-all flex items-center justify-between group",
+                                      selectedFilePath === file ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-zinc-950 border border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200"
+                                    )}
+                                  >
+                                    <span className="truncate">{file}</span>
+                                    <ChevronRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            <a 
+                              href={`https://github.com/${repoData.owner}/${repoData.repoName}/commit/${selectedCommit.sha}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center justify-center gap-2 w-full py-4 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl text-sm font-bold transition-all group"
+                            >
+                              View on GitHub
+                              <ExternalLink className="w-4 h-4 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
+                            </a>
                           </div>
-                        </div>
+                        )}
+
+                        {viewMode === 'diff' && (
+                          <div className="h-full">
+                            {diffPatch ? (
+                              <DiffViewer 
+                                filename={selectedFilePath || 'unknown'} 
+                                patch={diffPatch} 
+                                onClose={() => setDiffPatch(null)} 
+                              />
+                            ) : (
+                              <div className="h-full flex flex-col items-center justify-center text-zinc-600 space-y-4 p-8 text-center">
+                                <FileCode className="w-12 h-12 opacity-20" />
+                                <p className="text-sm">Select a file from the details tab to view the diff for this commit.</p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {viewMode === 'blame' && (
+                          <div className="h-full">
+                            {selectedFilePath ? (
+                              <BlameViewer 
+                                repoId={`${repoData.owner}/${repoData.repoName}`}
+                                path={selectedFilePath}
+                                onClose={() => {}} 
+                              />
+                            ) : (
+                              <div className="h-full flex flex-col items-center justify-center text-zinc-600 space-y-4 p-8 text-center">
+                                <Users className="w-12 h-12 opacity-20" />
+                                <p className="text-sm">Select a file to see its authorship history across all commits.</p>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  </div>
-                ) : activeTab === 'preview' ? (
-                  <ProjectPreview repoData={repoData} />
-                ) : activeTab === 'assistant' ? (
-                  <RepositoryAssistant repoData={repoData} />
-                ) : (
-                  <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-[700px]">
-                    <div className="lg:col-span-1 h-full">
-                      <DirectoryExplorer 
-                        files={repoData.files || []} 
-                        onFileSelect={(path) => setSelectedFilePath(path)}
-                        selectedPath={selectedFilePath || undefined}
-                      />
-                    </div>
-                    <div className="lg:col-span-3 h-full">
-                      {selectedFilePath ? (
-                        <CodeViewer 
-                          repoId={`${repoData.owner}/${repoData.repoName}`}
-                          path={selectedFilePath}
-                          onClose={() => setSelectedFilePath(null)}
-                        />
-                      ) : (
-                        <div className="h-full flex flex-col items-center justify-center bg-zinc-900/30 border border-zinc-800 rounded-xl border-dashed opacity-50">
-                          <FileCode className="w-12 h-12 mb-4 text-zinc-700" />
-                          <p className="text-sm">Select a file from the explorer to view its content and analysis.</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             ) : null
           } />
@@ -400,102 +746,7 @@ export default function App() {
           />
         )}
 
-        {selectedCommit && (
-          <>
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setSelectedCommit(null)}
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60]"
-            />
-            <motion.div 
-              initial={{ x: '100%' }}
-              animate={{ x: 0 }}
-              exit={{ x: '100%' }}
-              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed top-0 right-0 h-full w-full max-w-md bg-zinc-900 border-l border-zinc-800 shadow-2xl z-[70] overflow-y-auto"
-            >
-              <div className="p-8 space-y-8">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className={cn(
-                      "w-3 h-3 rounded-full",
-                      selectedCommit.sentiment === 'positive' ? "bg-emerald-500" :
-                      selectedCommit.sentiment === 'negative' ? "bg-rose-500" : "bg-zinc-500"
-                    )} />
-                    <span className="text-xs font-mono text-zinc-500 uppercase tracking-widest">Commit Detail</span>
-                  </div>
-                  <button 
-                    onClick={() => setSelectedCommit(null)}
-                    className="p-2 hover:bg-zinc-800 rounded-lg transition-colors"
-                  >
-                    <X className="w-5 h-5 text-zinc-400" />
-                  </button>
-                </div>
-
-                <div className="space-y-4">
-                  <h2 className="text-2xl font-bold leading-tight">{selectedCommit.message}</h2>
-                  <div className="flex items-center gap-2 text-xs font-mono text-emerald-500 bg-emerald-500/10 px-2 py-1 rounded w-fit">
-                    <GitCommit className="w-3 h-3" />
-                    {selectedCommit.sha.substring(0, 12)}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-2xl space-y-1">
-                    <div className="flex items-center gap-2 text-zinc-500 text-[10px] font-bold uppercase tracking-widest">
-                      <Users className="w-3 h-3" />
-                      Author
-                    </div>
-                    <div className="text-sm font-medium">{selectedCommit.author}</div>
-                  </div>
-                  <div className="p-4 bg-zinc-950 border border-zinc-800 rounded-2xl space-y-1">
-                    <div className="flex items-center gap-2 text-zinc-500 text-[10px] font-bold uppercase tracking-widest">
-                      <Activity className="w-3 h-3" />
-                      Date
-                    </div>
-                    <div className="text-sm font-medium">{new Date(selectedCommit.date).toLocaleDateString()}</div>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <h3 className="text-xs font-bold uppercase tracking-widest text-zinc-500">Stats & Impact</h3>
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="text-center p-4 bg-zinc-950 border border-zinc-800 rounded-2xl">
-                      <div className="text-xl font-bold text-white">{selectedCommit.filesChanged}</div>
-                      <div className="text-[10px] text-zinc-500 uppercase font-bold">Files</div>
-                    </div>
-                    <div className="text-center p-4 bg-zinc-950 border border-zinc-800 rounded-2xl">
-                      <div className="text-xl font-bold text-emerald-500">+{selectedCommit.insertions}</div>
-                      <div className="text-[10px] text-zinc-500 uppercase font-bold">Additions</div>
-                    </div>
-                    <div className="text-center p-4 bg-zinc-950 border border-zinc-800 rounded-2xl">
-                      <div className="text-xl font-bold text-rose-500">-{selectedCommit.deletions}</div>
-                      <div className="text-[10px] text-zinc-500 uppercase font-bold">Deletions</div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-6 bg-emerald-500/5 border border-emerald-500/10 rounded-3xl space-y-3">
-                  <div className="flex items-center gap-2 text-emerald-500 text-xs font-bold uppercase tracking-widest">
-                    <Sparkles className="w-4 h-4" />
-                    AI Sentiment Analysis
-                  </div>
-                  <p className="text-sm text-zinc-300 leading-relaxed">
-                    This commit has been classified as <span className="font-bold text-emerald-400 capitalize">{selectedCommit.sentiment}</span>. 
-                    {selectedCommit.sentiment === 'positive' ? 
-                      " It appears to be a constructive contribution, likely adding new features or improving existing code quality." :
-                      selectedCommit.sentiment === 'negative' ? 
-                      " It might be addressing a bug or a regression, or the commit message indicates a potential issue." :
-                      " It seems to be a standard maintenance or structural update."
-                    }
-                  </p>
-                </div>
-              </div>
-            </motion.div>
-          </>
-        )}
+        {/* Details Panel (Old Version Removed, integrated into main dashboard layout) */}
       </AnimatePresence>
     </div>
   );

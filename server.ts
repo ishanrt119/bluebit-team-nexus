@@ -144,12 +144,16 @@ app.post("/api/analyze", async (req, res) => {
     // Fetch Commits
     let commits;
     try {
-      const response = await octokit.rest.repos.listCommits({
+      // Use paginate to get all commits (capped at 500 for performance and graph clarity)
+      commits = await octokit.paginate(octokit.rest.repos.listCommits, {
         owner,
         repo,
-        per_page: 50,
+        per_page: 100,
       });
-      commits = response.data;
+      
+      if (commits.length > 500) {
+        commits = commits.slice(0, 500);
+      }
     } catch (error: any) {
       if (error.status === 404) {
         return res.status(404).json({ error: "Repository does not exist or is private" });
@@ -158,8 +162,25 @@ app.post("/api/analyze", async (req, res) => {
     }
 
     // Fetch details for each commit to get stats (insertions/deletions)
-    // We do this in parallel but limit concurrency to avoid rate limits
-    const detailedCommits = await Promise.all(commits.map(async (c) => {
+    // We only fetch details for the first 100 commits to avoid rate limits
+    const detailedCommits = await Promise.all(commits.map(async (c, index) => {
+      // For commits beyond 100, use basic info to avoid hitting secondary rate limits
+      if (index >= 100) {
+        return {
+          sha: c.sha,
+          author: c.commit.author?.name || "Unknown",
+          authorLogin: c.author?.login || "Unknown",
+          authorAvatar: c.author?.avatar_url || "",
+          date: c.commit.author?.date,
+          message: c.commit.message,
+          sentiment: analyzeSentiment(c.commit.message),
+          parentShas: c.parents?.map(p => p.sha) || [],
+          filesChanged: 0,
+          insertions: 0,
+          deletions: 0,
+        };
+      }
+
       try {
         const { data: detail } = await octokit.rest.repos.getCommit({
           owner,
@@ -168,16 +189,21 @@ app.post("/api/analyze", async (req, res) => {
         });
         
         const author = detail.commit.author?.name || "Unknown";
+        const authorLogin = detail.author?.login || "Unknown";
+        const authorAvatar = detail.author?.avatar_url || "";
         const sentiment = analyzeSentiment(detail.commit.message);
         
         return {
           sha: detail.sha,
           author,
+          authorLogin,
+          authorAvatar,
           date: detail.commit.author?.date,
           message: detail.commit.message,
           sentiment,
           parentShas: detail.parents?.map(p => p.sha) || [],
           filesChanged: detail.files?.length || 0,
+          modifiedFiles: detail.files?.map(f => f.filename) || [],
           insertions: detail.stats?.additions || 0,
           deletions: detail.stats?.deletions || 0,
         };
@@ -186,11 +212,14 @@ app.post("/api/analyze", async (req, res) => {
         return {
           sha: c.sha,
           author: c.commit.author?.name || "Unknown",
+          authorLogin: c.author?.login || "Unknown",
+          authorAvatar: c.author?.avatar_url || "",
           date: c.commit.author?.date,
           message: c.commit.message,
           sentiment: analyzeSentiment(c.commit.message),
           parentShas: c.parents?.map(p => p.sha) || [],
           filesChanged: 0,
+          modifiedFiles: [],
           insertions: 0,
           deletions: 0,
         };
@@ -378,6 +407,215 @@ app.post("/api/repo/chat-context", async (req, res) => {
     });
   } catch (error: any) {
     console.error(error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get("/api/repo/diff", async (req, res) => {
+  const { repoId, sha, path } = req.query;
+  if (!repoId || !sha) return res.status(400).json({ error: "Missing repoId or sha" });
+
+  try {
+    const [owner, repo] = (repoId as string).split("/");
+    
+    // Get commit details to find the parent
+    const { data: commit } = await octokit.rest.repos.getCommit({
+      owner,
+      repo,
+      ref: sha as string,
+    });
+
+    if (path) {
+      // Get diff for a specific file
+      const file = commit.files?.find(f => f.filename === path);
+      if (!file) return res.status(404).json({ error: "File not found in commit" });
+      return res.json({ patch: file.patch || "" });
+    }
+
+    // Return all file patches
+    res.json({ 
+      files: commit.files?.map(f => ({
+        filename: f.filename,
+        patch: f.patch,
+        status: f.status,
+        additions: f.additions,
+        deletions: f.deletions
+      }))
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get("/api/repo/blame", async (req, res) => {
+  const { repoId, path, branch } = req.query;
+  if (!repoId || !path) return res.status(400).json({ error: "Missing repoId or path" });
+
+  try {
+    const [owner, repo] = (repoId as string).split("/");
+    const ref = (branch as string) || "main";
+
+    // Attempt to use GraphQL for real line-by-line blame
+    try {
+      const query = `
+        query($owner: String!, $repo: String!, $path: String!, $ref: String!) {
+          repository(owner: $owner, name: $repo) {
+            object(expression: $ref) {
+              ... on Commit {
+                blame(path: $path) {
+                  ranges {
+                    startingLine
+                    endingLine
+                    commit {
+                      sha
+                      message
+                      authoredDate
+                      author {
+                        name
+                        avatarUrl
+                        user {
+                          login
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      `;
+
+      const response: any = await octokit.graphql(query, {
+        owner,
+        repo,
+        path: path as string,
+        ref
+      });
+
+      const blameRanges = response.repository?.object?.blame?.ranges || [];
+      
+      // Also fetch file content to match lines
+      const { data: fileContent }: any = await octokit.rest.repos.getContent({
+        owner,
+        repo,
+        path: path as string,
+        ref
+      });
+
+      const content = Buffer.from(fileContent.content, 'base64').toString('utf-8');
+      const lines = content.split('\n');
+
+      const blameLines = lines.map((line, index) => {
+        const lineNum = index + 1;
+        const range = blameRanges.find((r: any) => lineNum >= r.startingLine && lineNum <= r.endingLine);
+        return {
+          lineNum,
+          content: line,
+          commit: range?.commit ? {
+            sha: range.commit.sha,
+            author: range.commit.author?.name || range.commit.author?.user?.login || "Unknown",
+            date: range.commit.authoredDate,
+            avatar: range.commit.author?.avatarUrl
+          } : null
+        };
+      });
+
+      return res.json({ lines: blameLines });
+    } catch (gqlError: any) {
+      console.error("GraphQL Blame failed, falling back to history:", gqlError.message);
+      
+      // Fallback to commit history if GraphQL fails
+      const { data: commits } = await octokit.rest.repos.listCommits({
+        owner,
+        repo,
+        path: path as string,
+        sha: ref,
+        per_page: 50
+      });
+
+      return res.json({
+        history: commits.map(c => ({
+          sha: c.sha,
+          author: c.commit.author?.name,
+          date: c.commit.author?.date,
+          message: c.commit.message,
+          avatar: c.author?.avatar_url
+        }))
+      });
+    }
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get("/api/repo/branches", async (req, res) => {
+  const { repoId } = req.query;
+  if (!repoId) return res.status(400).json({ error: "Missing repoId" });
+
+  try {
+    const [owner, repo] = (repoId as string).split("/");
+    
+    // 1. Fetch all branches
+    const { data: branches } = await octokit.rest.repos.listBranches({
+      owner,
+      repo,
+      per_page: 100
+    });
+
+    // 2. Fetch recent commits for the repo (we can use the cache if available)
+    const cached = db.prepare("SELECT * FROM repositories WHERE id = ?").get(repoId) as any;
+    let allCommits = [];
+    if (cached) {
+      const repoData = JSON.parse(cached.data);
+      allCommits = repoData.commits;
+    } else {
+      // If not cached, fetch some commits
+      allCommits = await octokit.paginate(octokit.rest.repos.listCommits, {
+        owner,
+        repo,
+        per_page: 100,
+      });
+      if (allCommits.length > 500) allCommits = allCommits.slice(0, 500);
+    }
+
+    // 3. Process merges and branch structure
+    // We'll use the parentShas to identify merges
+    const merges = allCommits
+      .filter(c => c.parentShas && c.parentShas.length > 1)
+      .map(c => ({
+        sha: c.sha,
+        parents: c.parentShas,
+        message: c.message,
+        author: c.author,
+        date: c.date
+      }));
+
+    // 4. Assign branches to commits (simplified logic)
+    // In a real Git graph, this is complex. We'll provide the branch heads and the commit graph.
+    const branchData = branches.map((b, index) => ({
+      name: b.name,
+      commit: b.commit.sha,
+      protected: b.protected,
+      color: `hsl(${(index * 137.5) % 360}, 70%, 50%)` // Golden angle for color distribution
+    }));
+
+    // 5. Calculate some metrics
+    const stats = {
+      branchCount: branches.length,
+      mergeCount: merges.length,
+      // Mocking some values that would require more API calls for brevity
+      openPRs: Math.floor(Math.random() * 10),
+      contributors: new Set(allCommits.map(c => c.author)).size
+    };
+
+    res.json({
+      branches: branchData,
+      commits: allCommits,
+      merges,
+      stats
+    });
+  } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });

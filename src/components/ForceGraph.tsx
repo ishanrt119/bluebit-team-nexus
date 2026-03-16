@@ -1,0 +1,267 @@
+import React, { useEffect, useRef, useMemo, useState } from 'react';
+import * as d3 from 'd3';
+import { motion, AnimatePresence } from 'motion/react';
+import { Share2, User, Calendar, FileCode, GitCommit, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
+import { Commit, cn } from '../lib/utils';
+
+interface Node extends d3.SimulationNodeDatum {
+  id: string;
+  type: 'commit' | 'file';
+  label: string;
+  data?: any;
+}
+
+interface Link extends d3.SimulationLinkDatum<Node> {
+  source: string | Node;
+  target: string | Node;
+}
+
+interface ForceGraphProps {
+  commits: Commit[];
+  onNodeClick?: (data: any) => void;
+}
+
+export function ForceGraph({ commits, onNodeClick }: ForceGraphProps) {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+  const [filterAuthor, setFilterAuthor] = useState<string | null>(null);
+
+  const authors = useMemo(() => Array.from(new Set(commits.map(c => c.author))), [commits]);
+
+  const graphData = useMemo(() => {
+    const nodes: Node[] = [];
+    const links: Link[] = [];
+    const fileNodes = new Set<string>();
+
+    const filteredCommits = filterAuthor 
+      ? commits.filter(c => c.author === filterAuthor)
+      : commits.slice(0, 50); // Limit for performance
+
+    filteredCommits.forEach(commit => {
+      nodes.push({
+        id: commit.sha,
+        type: 'commit',
+        label: commit.message.substring(0, 30),
+        data: commit
+      });
+
+      if (commit.modifiedFiles) {
+        commit.modifiedFiles.forEach(filePath => {
+          if (!fileNodes.has(filePath)) {
+            nodes.push({
+              id: filePath,
+              type: 'file',
+              label: filePath.split('/').pop() || filePath
+            });
+            fileNodes.add(filePath);
+          }
+          links.push({
+            source: commit.sha,
+            target: filePath
+          });
+        });
+      }
+    });
+
+    return { nodes, links };
+  }, [commits, filterAuthor]);
+
+  useEffect(() => {
+    if (!svgRef.current || graphData.nodes.length === 0) return;
+
+    const width = svgRef.current.clientWidth;
+    const height = svgRef.current.clientHeight;
+
+    const svg = d3.select(svgRef.current);
+    svg.selectAll('*').remove();
+
+    const g = svg.append('g');
+
+    const zoom = d3.zoom<SVGSVGElement, unknown>()
+      .scaleExtent([0.1, 4])
+      .on('zoom', (event) => {
+        g.attr('transform', event.transform);
+      });
+
+    svg.call(zoom);
+
+    const simulation = d3.forceSimulation<Node>(graphData.nodes)
+      .force('link', d3.forceLink<Node, Link>(graphData.links).id(d => d.id).distance(100))
+      .force('charge', d3.forceManyBody().strength(-200))
+      .force('center', d3.forceCenter(width / 2, height / 2))
+      .force('collision', d3.forceCollide().radius(50));
+
+    const link = g.append('g')
+      .attr('stroke', '#27272a')
+      .attr('stroke-opacity', 0.4)
+      .selectAll('line')
+      .data(graphData.links)
+      .join('line')
+      .attr('stroke-width', 1);
+
+    const node = g.append('g')
+      .selectAll('g')
+      .data(graphData.nodes)
+      .join('g')
+      .attr('cursor', 'pointer')
+      .on('click', (event, d) => {
+        setSelectedNode(d);
+        if (onNodeClick && d.type === 'commit') onNodeClick(d.data);
+      })
+      .call(d3.drag<SVGGElement, Node>()
+        .on('start', dragstarted)
+        .on('drag', dragged)
+        .on('end', dragended) as any);
+
+    node.append('circle')
+      .attr('r', d => d.type === 'commit' ? 8 : 5)
+      .attr('fill', d => d.type === 'commit' ? '#10b981' : '#3b82f6')
+      .attr('stroke', '#09090b')
+      .attr('stroke-width', 2);
+
+    node.append('text')
+      .attr('dx', 12)
+      .attr('dy', '.35em')
+      .text(d => d.label)
+      .attr('fill', '#71717a')
+      .attr('font-size', '10px')
+      .attr('font-family', 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace')
+      .style('pointer-events', 'none');
+
+    simulation.on('tick', () => {
+      link
+        .attr('x1', d => (d.source as Node).x!)
+        .attr('y1', d => (d.source as Node).y!)
+        .attr('x2', d => (d.target as Node).x!)
+        .attr('y2', d => (d.target as Node).y!);
+
+      node
+        .attr('transform', d => `translate(${d.x},${d.y})`);
+    });
+
+    function dragstarted(event: any, d: any) {
+      if (!event.active) simulation.alphaTarget(0.3).restart();
+      d.fx = d.x;
+      d.fy = d.y;
+    }
+
+    function dragged(event: any, d: any) {
+      d.fx = event.x;
+      d.fy = event.y;
+    }
+
+    function dragended(event: any, d: any) {
+      if (!event.active) simulation.alphaTarget(0);
+      d.fx = null;
+      d.fy = null;
+    }
+
+    return () => {
+      simulation.stop();
+    };
+  }, [graphData, onNodeClick]);
+
+  return (
+    <div className="h-[700px] w-full bg-zinc-950 rounded-[2.5rem] border border-white/5 overflow-hidden relative group shadow-2xl">
+      <svg ref={svgRef} className="w-full h-full" />
+
+      <div className="absolute top-6 left-6 z-20 flex items-center gap-4">
+        <div className="flex items-center gap-3 bg-zinc-900/50 backdrop-blur-2xl px-4 py-2 rounded-2xl border border-white/10 shadow-xl">
+          <div className="w-8 h-8 rounded-xl bg-blue-500/20 flex items-center justify-center border border-blue-500/20">
+            <Share2 className="w-4 h-4 text-blue-400" />
+          </div>
+          <div className="flex flex-col">
+            <span className="text-xs font-bold text-white tracking-tight">Commit Network</span>
+            <span className="text-[10px] text-zinc-500 font-medium">Force-directed relationship graph</span>
+          </div>
+        </div>
+
+        <div className="relative">
+          <select 
+            className="appearance-none bg-zinc-900/50 backdrop-blur-2xl px-6 py-2.5 pr-10 rounded-2xl border border-white/10 text-[11px] font-bold text-zinc-300 outline-none focus:ring-2 focus:ring-blue-500/20 transition-all cursor-pointer hover:bg-zinc-900/80"
+            onChange={(e) => setFilterAuthor(e.target.value || null)}
+            value={filterAuthor || ''}
+          >
+            <option value="">All Contributors</option>
+            {authors.map(author => (
+              <option key={author} value={author}>{author}</option>
+            ))}
+          </select>
+          <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500">
+            <User className="w-3 h-3" />
+          </div>
+        </div>
+      </div>
+
+      <div className="absolute top-6 right-6 z-20 flex flex-col gap-2">
+        <button className="p-3 bg-zinc-900/50 backdrop-blur-xl border border-white/10 rounded-2xl text-zinc-400 hover:text-white transition-colors">
+          <ZoomIn className="w-4 h-4" />
+        </button>
+        <button className="p-3 bg-zinc-900/50 backdrop-blur-xl border border-white/10 rounded-2xl text-zinc-400 hover:text-white transition-colors">
+          <ZoomOut className="w-4 h-4" />
+        </button>
+        <button className="p-3 bg-zinc-900/50 backdrop-blur-xl border border-white/10 rounded-2xl text-zinc-400 hover:text-white transition-colors">
+          <Maximize2 className="w-4 h-4" />
+        </button>
+      </div>
+
+      <AnimatePresence>
+        {selectedNode && (
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            className="absolute bottom-6 right-6 z-30 w-80 bg-zinc-900/90 backdrop-blur-2xl border border-white/10 p-6 rounded-[2rem] shadow-2xl space-y-4"
+          >
+            <div className="flex items-center justify-between">
+              <div className={cn(
+                "w-10 h-10 rounded-xl flex items-center justify-center border",
+                selectedNode.type === 'commit' ? "bg-emerald-500/10 border-emerald-500/20" : "bg-blue-500/10 border-blue-500/20"
+              )}>
+                {selectedNode.type === 'commit' ? <GitCommit className="w-5 h-5 text-emerald-400" /> : <FileCode className="w-5 h-5 text-blue-400" />}
+              </div>
+              <button 
+                onClick={() => setSelectedNode(null)}
+                className="text-zinc-500 hover:text-white transition-colors"
+              >
+                ×
+              </button>
+            </div>
+
+            <div>
+              <h3 className="text-sm font-bold text-white truncate">{selectedNode.label}</h3>
+              <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold mt-1">{selectedNode.type}</p>
+            </div>
+
+            {selectedNode.type === 'commit' && selectedNode.data && (
+              <div className="space-y-3 pt-4 border-t border-white/5">
+                <div className="flex items-center gap-2 text-xs text-zinc-400">
+                  <User className="w-3 h-3" />
+                  <span>{selectedNode.data.author}</span>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-zinc-400">
+                  <Calendar className="w-3 h-3" />
+                  <span>{new Date(selectedNode.data.date).toLocaleDateString()}</span>
+                </div>
+                <p className="text-[11px] text-zinc-500 leading-relaxed line-clamp-3 italic">
+                  "{selectedNode.data.message}"
+                </p>
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <div className="absolute bottom-6 left-6 z-20 flex gap-6 bg-zinc-900/50 backdrop-blur-2xl px-6 py-3 rounded-2xl border border-white/10 shadow-xl">
+        <div className="flex items-center gap-2.5">
+          <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+          <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">Commit</span>
+        </div>
+        <div className="flex items-center gap-2.5">
+          <div className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
+          <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">File</span>
+        </div>
+      </div>
+    </div>
+  );
+}

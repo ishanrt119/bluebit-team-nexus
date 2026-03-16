@@ -9,6 +9,8 @@ export function cn(...inputs: ClassValue[]) {
 export interface Commit {
   sha: string;
   author: string;
+  authorLogin?: string;
+  authorAvatar?: string;
   date: string;
   message: string;
   sentiment: 'positive' | 'negative' | 'neutral';
@@ -17,6 +19,7 @@ export interface Commit {
   insertions?: number;
   deletions?: number;
   isLatest?: boolean;
+  modifiedFiles?: string[];
 }
 
 export interface RepoData {
