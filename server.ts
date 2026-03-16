@@ -12,8 +12,8 @@ const PORT = 3000;
 const db = new Database("git_insight.db");
 
 const aiClient = process.env.N_AI ? new OpenAI({
-    baseURL: 'https://api.tokenfactory.nebius.com/v1/',
-    apiKey: process.env.N_AI,
+  baseURL: 'https://api.tokenfactory.nebius.com/v1/',
+  apiKey: process.env.N_AI,
 }) : null;
 
 // Initialize DB
@@ -161,7 +161,7 @@ app.post("/api/analyze", async (req, res) => {
     }
 
     const detailedCommits: any[] = [];
-    
+
     // Fetch massive details instantly using GitHub GraphQL API
     try {
       const query = `
@@ -199,13 +199,13 @@ app.post("/api/analyze", async (req, res) => {
 
       const graphqlRes: any = await octokit.graphql(query, { owner, repo });
       const gqlNodes = graphqlRes.repository?.defaultBranchRef?.target?.history?.nodes || [];
-      
+
       const gqlMap = new Map(gqlNodes.map((n: any) => [n.oid, n]));
 
       // GraphQL doesn't give direct file paths easily, so we only fetch full file path patches for the Top 25 most recent commits via REST concurrently
       // This is a 10x speedup from previous 100 batches while still giving great churn and graph data
       const commitsToGetFilesFor = commits.slice(0, 25);
-      const restResults = await Promise.all(commitsToGetFilesFor.map(c => 
+      const restResults = await Promise.all(commitsToGetFilesFor.map(c =>
         octokit.rest.repos.getCommit({ owner, repo, ref: c.sha }).catch(() => null)
       ));
 
@@ -220,7 +220,7 @@ app.post("/api/analyze", async (req, res) => {
       commits.forEach((c) => {
         const g = gqlMap.get(c.sha) as any;
         const filePaths = fileMap.get(c.sha) || [];
-        
+
         detailedCommits.push({
           sha: c.sha,
           author: g?.author?.name || c.commit.author?.name || "Unknown",
@@ -239,7 +239,7 @@ app.post("/api/analyze", async (req, res) => {
           deletions: g?.deletions || 0,
         });
       });
-      
+
     } catch (error: any) {
       console.warn("GraphQL failed, using minimal REST fallback...", error.message);
       // Absolute fallback if GraphQL is disabled/token lacks scope
@@ -682,7 +682,7 @@ Provide a clear, accurate, and helpful response based on the repository context 
     const formattedHistory = history.slice(-20).map((msg: any) => ({ role: msg.role, content: msg.content }));
 
     const messages: any[] = [...formattedHistory, ...systemMessages];
-    
+
     // Save user's prompt to history
     rData.chatHistory = [...(rData.chatHistory || []), { role: "user", content: question, timestamp: new Date().toISOString() }];
     db.prepare("UPDATE repositories SET data = ? WHERE id = ?").run(JSON.stringify(rData), context.repoId);
@@ -695,6 +695,31 @@ Provide a clear, accurate, and helpful response based on the repository context 
 
     let msg = response.choices[0].message;
 
+    // Handle Moonshot raw text tool calls if standard tool_calls array is not present
+    if (!msg.tool_calls && msg.content && msg.content.includes('<|tool_call_begin|>')) {
+      const content = msg.content;
+      const toolCalls = [];
+      const regex = /<\|tool_call_begin\|>\s*functions\.([^\s:]+):\d+\s*<\|tool_call_argument_begin\|>\s*([\s\S]*?)\s*<\|tool_call_end\|>/g;
+      let match;
+
+      while ((match = regex.exec(content)) !== null) {
+        toolCalls.push({
+          id: `call_${Math.random().toString(36).substring(7)}`,
+          type: 'function',
+          function: {
+            name: match[1],
+            arguments: match[2].trim()
+          }
+        });
+      }
+
+      if (toolCalls.length > 0) {
+        msg.tool_calls = toolCalls;
+        // Strip the raw tool call blob from the content being saved to history
+        msg.content = content.split('<|tool_calls_section_begin|>')[0].trim();
+      }
+    }
+
     if (msg.tool_calls && msg.tool_calls.length > 0) {
       messages.push(msg);
 
@@ -705,13 +730,13 @@ Provide a clear, accurate, and helpful response based on the repository context 
             const args = JSON.parse(functionCall.arguments);
             const cached = db.prepare("SELECT data FROM repositories WHERE id = ?").get(context.repoId) as any;
             let result = "No commits found or repository not analyzed.";
-            
+
             if (cached) {
               const rData = JSON.parse(cached.data);
               let commits = rData.commits || [];
               if (args.author) commits = commits.filter((c: any) => c.author.toLowerCase().includes(args.author.toLowerCase()));
               if (args.query) commits = commits.filter((c: any) => c.message.toLowerCase().includes(args.query.toLowerCase()));
-              
+
               const limit = args.limit || 5;
               result = JSON.stringify(commits.slice(0, limit).map((c: any) => ({
                 sha: c.sha, author: c.author, date: c.date, message: c.message
@@ -736,22 +761,22 @@ Provide a clear, accurate, and helpful response based on the repository context 
           try {
             const args = JSON.parse(functionCall.arguments);
             const path = args.file_path;
-            
+
             const file = db.prepare("SELECT content FROM files WHERE repo_id = ? AND path = ?").get(context.repoId, path) as any;
             let result = "File not found or not in cache.";
-            
+
             if (file) {
-               // Truncate to avoid context window API limit
-               result = file.content.length > 8000 ? file.content.substring(0, 8000) + "\n...[truncated]" : file.content;
+              // Truncate to avoid context window API limit
+              result = file.content.length > 8000 ? file.content.substring(0, 8000) + "\n...[truncated]" : file.content;
             } else {
-               const [owner, repo] = context.repoId.split("/");
-               try {
-                 const { data: fileData } = await octokit.rest.repos.getContent({ owner, repo, path }) as any;
-                 const content = Buffer.from(fileData.content, "base64").toString();
-                 result = content.length > 8000 ? content.substring(0, 8000) + "\n...[truncated]" : content;
-               } catch (e) {
-                 result = "Could not fetch file from GitHub API. It may not exist.";
-               }
+              const [owner, repo] = context.repoId.split("/");
+              try {
+                const { data: fileData } = await octokit.rest.repos.getContent({ owner, repo, path }) as any;
+                const content = Buffer.from(fileData.content, "base64").toString();
+                result = content.length > 8000 ? content.substring(0, 8000) + "\n...[truncated]" : content;
+              } catch (e) {
+                result = "Could not fetch file from GitHub API. It may not exist.";
+              }
             }
 
             messages.push({
@@ -773,7 +798,7 @@ Provide a clear, accurate, and helpful response based on the repository context 
             const args = JSON.parse(functionCall.arguments);
             const cached = db.prepare("SELECT data FROM repositories WHERE id = ?").get(context.repoId) as any;
             let result = "No commits found or repository not analyzed.";
-            
+
             if (cached) {
               const rData = JSON.parse(cached.data);
               const limit = args.limit || 5;
@@ -808,15 +833,15 @@ Provide a clear, accurate, and helpful response based on the repository context 
     }
 
     const answer = msg.content || "Sorry, I couldn't generate an answer.";
-    
+
     // Save assistant's answer to history
     const finalCached = db.prepare("SELECT * FROM repositories WHERE id = ?").get(context.repoId) as any;
     if (finalCached) {
-        let finalData = JSON.parse(finalCached.data);
-        finalData.chatHistory = [...(finalData.chatHistory || []), { role: "assistant", content: answer, timestamp: new Date().toISOString() }];
-        db.prepare("UPDATE repositories SET data = ? WHERE id = ?").run(JSON.stringify(finalData), context.repoId);
+      let finalData = JSON.parse(finalCached.data);
+      finalData.chatHistory = [...(finalData.chatHistory || []), { role: "assistant", content: answer, timestamp: new Date().toISOString() }];
+      db.prepare("UPDATE repositories SET data = ? WHERE id = ?").run(JSON.stringify(finalData), context.repoId);
     }
-    
+
     res.json({ answer });
   } catch (error: any) {
     console.error("AI Chat Error:", error);
@@ -849,9 +874,9 @@ app.delete("/api/repo/chat-history", (req, res) => {
   try {
     const cached = db.prepare("SELECT * FROM repositories WHERE id = ?").get(repoId) as any;
     if (cached) {
-        const data = JSON.parse(cached.data);
-        data.chatHistory = []; // clear the history array
-        db.prepare("UPDATE repositories SET data = ? WHERE id = ?").run(JSON.stringify(data), repoId);
+      const data = JSON.parse(cached.data);
+      data.chatHistory = []; // clear the history array
+      db.prepare("UPDATE repositories SET data = ? WHERE id = ?").run(JSON.stringify(data), repoId);
     }
     res.json({ success: true });
   } catch (error: any) {
