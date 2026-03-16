@@ -3,12 +3,18 @@ import { createServer as createViteServer } from "vite";
 import { Octokit } from "octokit";
 import Database from "better-sqlite3";
 import dotenv from "dotenv";
+import OpenAI from "openai";
 
 dotenv.config();
 
 const app = express();
 const PORT = 3000;
 const db = new Database("git_insight.db");
+
+const aiClient = process.env.N_AI ? new OpenAI({
+    baseURL: 'https://api.tokenfactory.nebius.com/v1/',
+    apiKey: process.env.N_AI,
+}) : null;
 
 // Initialize DB
 db.exec(`
@@ -496,6 +502,62 @@ app.post("/api/save-narrative", (req, res) => {
   res.json({ success: true });
 });
 
+app.post("/api/generate-narrative", async (req, res) => {
+  if (!aiClient) return res.status(500).json({ error: "AI not configured on server" });
+  const { repoData } = req.body;
+  if (!repoData) return res.status(400).json({ error: "Missing repoData" });
+
+  try {
+    const prompt = `You are an expert Git repository analyzer. You will receive stats about a repository.
+Your task is to generate a cinematic narrative of the project's evolution.
+You must return ONLY a JSON object with this exact structure, nothing else:
+{
+  "introduction": "string (A dramatic opening sentence)",
+  "majorEvents": [
+    { "title": "string", "description": "string", "date": "string", "impact": "high" | "medium" | "low" }
+  ],
+  "challenges": ["string (e.g. Managing code complexity)"],
+  "turningPoints": ["string"],
+  "conclusion": "string",
+  "summary": "string",
+  "documentaryScript": "string (A script format: '[Scene: ...] Narrator: ...')"
+}
+
+Repository Data:
+Name: ${repoData.repoName}
+Owner: ${repoData.owner}
+Total Commits: ${repoData.totalCommits || repoData.commits?.length}
+Description: ${repoData.description || "N/A"}
+Top files: ${repoData.files?.slice(0, 10).join(', ')}
+
+Recent Commit Messages (Context):
+${(repoData.commits || []).slice(0, 20).map((c: any) => `- ${c.date.split('T')[0]}: ${c.message.split('\n')[0]} (by ${c.author})`).join('\n')}
+`;
+
+    const response = await aiClient.chat.completions.create({
+      model: "moonshotai/Kimi-K2.5-fast",
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content: "You are a creative technical writer and repository analyst. Output only valid JSON matching the requested structure."
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ]
+    });
+
+    const content = response.choices[0].message.content || "{}";
+    const narrative = JSON.parse(content);
+    res.json(narrative);
+  } catch (error: any) {
+    console.error("AI Generation Error:", error);
+    res.status(500).json({ error: error.message || "Failed to generate narrative" });
+  }
+});
+
 app.post("/api/repo/chat-context", async (req, res) => {
   const { repoId, question } = req.body;
   if (!repoId || !question) return res.status(400).json({ error: "Missing repoId or question" });
@@ -524,6 +586,7 @@ app.post("/api/repo/chat-context", async (req, res) => {
     }
 
     res.json({
+      repoId,
       fileTree: repoData.files?.slice(0, 1000),
       readme: repoData.readme?.substring(0, 5000),
       packageJson: repoData.packageJson,
@@ -536,6 +599,114 @@ app.post("/api/repo/chat-context", async (req, res) => {
   } catch (error: any) {
     console.error(error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/repo/chat-answer", async (req, res) => {
+  if (!aiClient) return res.status(500).json({ error: "AI not configured on server" });
+  const { context, question, mode } = req.body;
+  if (!context || !question) return res.status(400).json({ error: "Missing context or question" });
+
+  try {
+    const prompt = `You are a helpful and expert AI assistant analyzing a Git repository.
+The user is asking a question in '${mode}' mode. (If beginner, explain simply. If technical, be detailed).
+
+Repository Context provided by backend:
+Repo ID: ${context.repoId || 'unknown'}
+Files: ${context.fileTree?.map((f: any) => f.path).slice(0, 50).join(', ')}
+${context.packageJson ? `Package.json Dependencies: ${JSON.stringify(context.packageJson?.dependencies)}` : ''}
+
+Relevant File Contents snippets:
+${(context.relevantFiles || []).map((f: any) => `### ${f.path}\n${f.content.substring(0, 1500)}`).join('\n\n')}
+
+Question: ${question}
+
+Provide a clear, accurate, and helpful response based on the repository context above. You MUST use the 'search_commits' tool if the user asks about the commit history or authors.`;
+
+    const tools: any[] = [
+      {
+        type: "function",
+        function: {
+          name: "search_commits",
+          description: "Search the git commit history by keyword or author",
+          parameters: {
+            type: "object",
+            properties: {
+              query: { type: "string", description: "Keyword to search for in commit messages" },
+              author: { type: "string", description: "Author name to filter by" },
+              limit: { type: "number", description: "Maximum number of commits to return (default 5)" }
+            }
+          }
+        }
+      }
+    ];
+
+    const messages: any[] = [
+      { role: "system", content: "You are a repository analysis assistant." },
+      { role: "user", content: prompt }
+    ];
+
+    let response = await aiClient.chat.completions.create({
+      model: "moonshotai/Kimi-K2.5-fast",
+      messages,
+      tools
+    });
+
+    let msg = response.choices[0].message;
+
+    if (msg.tool_calls && msg.tool_calls.length > 0) {
+      messages.push(msg);
+
+      for (const call of msg.tool_calls) {
+        const functionCall = (call as any).function;
+        if (functionCall?.name === 'search_commits') {
+          try {
+            const args = JSON.parse(functionCall.arguments);
+            const cached = db.prepare("SELECT data FROM repositories WHERE id = ?").get(context.repoId) as any;
+            let result = "No commits found or repository not analyzed.";
+            
+            if (cached) {
+              const rData = JSON.parse(cached.data);
+              let commits = rData.commits || [];
+              if (args.author) commits = commits.filter((c: any) => c.author.toLowerCase().includes(args.author.toLowerCase()));
+              if (args.query) commits = commits.filter((c: any) => c.message.toLowerCase().includes(args.query.toLowerCase()));
+              
+              const limit = args.limit || 5;
+              result = JSON.stringify(commits.slice(0, limit).map((c: any) => ({
+                sha: c.sha, author: c.author, date: c.date, message: c.message
+              })));
+            }
+
+            messages.push({
+              role: "tool",
+              content: result,
+              tool_call_id: call.id,
+              name: functionCall.name
+            });
+          } catch (e) {
+            messages.push({
+              role: "tool",
+              content: '{"error": "Failed to execute tool"}',
+              tool_call_id: call.id,
+              name: functionCall?.name || "search_commits"
+            });
+          }
+        }
+      }
+
+      response = await aiClient.chat.completions.create({
+        model: "moonshotai/Kimi-K2.5-fast",
+        messages,
+        tools
+      });
+      msg = response.choices[0].message;
+    }
+
+    const answer = msg.content || "Sorry, I couldn't generate an answer.";
+    res.json({ answer });
+  } catch (error: any) {
+    console.error("AI Chat Error:", error);
+    res.status(500).json({ error: error.message || "Failed to generate chat answer" });
   }
 });
 

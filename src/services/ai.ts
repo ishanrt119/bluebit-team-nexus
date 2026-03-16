@@ -38,7 +38,23 @@ export async function generateProjectSummary(repoData: any): Promise<any> {
 }
 
 export async function chatWithRepo(context: any, question: string, mode: 'beginner' | 'technical'): Promise<string> {
-  // Local implementation without API
+  try {
+    const response = await fetch('/api/repo/chat-answer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ context, question, mode })
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      return data.answer;
+    }
+    console.warn("AI chat failed, falling back to local mock.");
+  } catch (err) {
+    console.error("Failed to call AI chat endpoint:", err);
+  }
+
+  // Local fallback without API
   const q = question.toLowerCase();
   
   if (q.includes("what") && q.includes("do")) {
@@ -58,9 +74,25 @@ export async function chatWithRepo(context: any, question: string, mode: 'beginn
 }
 
 export async function generateRepoNarrative(repoData: any): Promise<RepoNarrative> {
-  // Local implementation without API
-  const commitCount = repoData.totalCommits;
-  const contributorCount = repoData.contributors.length;
+  try {
+    const response = await fetch('/api/generate-narrative', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repoData })
+    });
+
+    if (response.ok) {
+      const narrative = await response.json();
+      return narrative;
+    }
+    console.warn("AI generation failed or not configured, falling back to local mock.");
+  } catch (err) {
+    console.error("Failed to call AI endpoint:", err);
+  }
+
+  // Local fallback without API
+  const commitCount = repoData.totalCommits || repoData.commits?.length || 0;
+  const contributorCount = repoData.contributors?.length || 0;
   
   const intro = `The story of ${repoData.repoName} began with a vision by ${repoData.owner}. Over time, it grew into a codebase with ${commitCount} commits.`;
   
@@ -76,11 +108,11 @@ export async function generateRepoNarrative(repoData: any): Promise<RepoNarrativ
     "Coordinating contributions from multiple developers."
   ];
 
-  const majorEvents = repoData.commits.slice(0, 5).map((c: any) => ({
-    title: c.message.split('\n')[0].substring(0, 40),
+  const majorEvents = (repoData.commits || []).slice(0, 5).map((c: any) => ({
+    title: (c.message || '').split('\n')[0].substring(0, 40) || 'Update',
     description: `A significant update by ${c.author} that moved the project forward.`,
-    date: new Date(c.date).toLocaleDateString(),
-    impact: c.filesChanged > 5 ? "high" : "medium"
+    date: new Date(c.date || Date.now()).toLocaleDateString(),
+    impact: (c.filesChanged || 0) > 5 ? "high" : "medium"
   }));
 
   return {
