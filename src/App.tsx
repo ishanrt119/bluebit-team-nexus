@@ -344,7 +344,7 @@ export default function App() {
                       { id: 'graph', label: 'Network' },
                       { id: 'branches', label: 'Branches' },
                       { id: 'contributors', label: 'Contributors' },
-                      { id: 'health', label: '🩺 Health' },
+                      { id: 'health', label: 'Health' },
                       { id: 'preview', label: 'Preview' },
                       { id: 'assistant', label: 'Assistant' },
                       { id: 'explorer', label: 'Explorer' }
