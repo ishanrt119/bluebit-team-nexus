@@ -45,6 +45,33 @@ export function RepositoryAssistant({ repoData }: RepositoryAssistantProps) {
     }
   }, [messages]);
 
+  useEffect(() => {
+    const fetchHistory = async () => {
+      try {
+        const repoId = `${repoData.owner}/${repoData.repoName}`;
+        const res = await fetch(`/api/repo/chat-history?repoId=${encodeURIComponent(repoId)}`);
+        const data = await res.json();
+        if (data.history && data.history.length > 0) {
+          const loadedMessages = data.history.map((msg: any) => ({
+            role: msg.role,
+            content: msg.content,
+            // SQLite returns 'YYYY-MM-DD HH:MM:SS', assume UTC
+            timestamp: new Date(msg.timestamp + 'Z')
+          }));
+          const defaultMsg: Message = {
+            role: 'assistant',
+            content: `Hello! I'm your Repository Assistant. I've analyzed **${repoData.repoName}** and I'm ready to help you understand the codebase. What would you like to know?`,
+            timestamp: new Date()
+          };
+          setMessages([defaultMsg, ...loadedMessages]);
+        }
+      } catch (error) {
+        console.error("Failed to load chat history", error);
+      }
+    };
+    fetchHistory();
+  }, [repoData]);
+
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
 
@@ -93,8 +120,20 @@ export function RepositoryAssistant({ repoData }: RepositoryAssistantProps) {
     }
   };
 
-  const clearChat = () => {
-    setMessages([messages[0]]);
+  const clearChat = async () => {
+    try {
+      const repoId = `${repoData.owner}/${repoData.repoName}`;
+      await fetch(`/api/repo/chat-history?repoId=${encodeURIComponent(repoId)}`, {
+        method: 'DELETE',
+      });
+      setMessages([{
+        role: 'assistant',
+        content: `Hello! I'm your Repository Assistant. I've analyzed **${repoData.repoName}** and I'm ready to help you understand the codebase. What would you like to know?`,
+        timestamp: new Date()
+      }]);
+    } catch (e) {
+      console.error("Failed to clear chat history", e);
+    }
   };
 
   return (

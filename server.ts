@@ -364,7 +364,8 @@ app.post("/api/analyze", async (req, res) => {
         churnRate,
         refactorCount: detailedCommits.filter(c => c.message.toLowerCase().includes("refactor")).length,
         bugFixes: detailedCommits.filter(c => c.message.toLowerCase().includes("fix")).length,
-      }
+      },
+      chatHistory: [] // Initialize chat history in cache
     };
 
     // Store in DB
@@ -638,13 +639,53 @@ Provide a clear, accurate, and helpful response based on the repository context 
             }
           }
         }
+      },
+      {
+        type: "function",
+        function: {
+          name: "read_file",
+          description: "Reads and returns the content of a specific file from the git repository.",
+          parameters: {
+            type: "object",
+            properties: {
+              file_path: { type: "string", description: "The relative path to the file in the repository, e.g., 'src/main.py'" }
+            },
+            required: ["file_path"]
+          }
+        }
+      },
+      {
+        type: "function",
+        function: {
+          name: "get_commit_history",
+          description: "Retrieves the recent commit history of the repository including commit hashes and messages.",
+          parameters: {
+            type: "object",
+            properties: {
+              limit: { type: "number", description: "The number of recent commits to retrieve (default 5)" }
+            }
+          }
+        }
       }
     ];
 
-    const messages: any[] = [
+    const systemMessages: any[] = [
       { role: "system", content: "You are a repository analysis assistant." },
       { role: "user", content: prompt }
     ];
+
+    let cachedRepo = db.prepare("SELECT * FROM repositories WHERE id = ?").get(context.repoId) as any;
+    let repoDataStr = cachedRepo ? cachedRepo.data : "{}";
+    let rData = JSON.parse(repoDataStr);
+
+    const history = rData.chatHistory || [];
+    const formattedHistory = history.slice(-20).map((msg: any) => ({ role: msg.role, content: msg.content }));
+
+    const messages: any[] = [...formattedHistory, ...systemMessages];
+    
+    // Save user's prompt to history
+    rData.chatHistory = [...(rData.chatHistory || []), { role: "user", content: question, timestamp: new Date().toISOString() }];
+    db.prepare("UPDATE repositories SET data = ? WHERE id = ?").run(JSON.stringify(rData), context.repoId);
 
     let response = await aiClient.chat.completions.create({
       model: "moonshotai/Kimi-K2.5-fast",
@@ -691,6 +732,70 @@ Provide a clear, accurate, and helpful response based on the repository context 
               name: functionCall?.name || "search_commits"
             });
           }
+        } else if (functionCall?.name === 'read_file') {
+          try {
+            const args = JSON.parse(functionCall.arguments);
+            const path = args.file_path;
+            
+            const file = db.prepare("SELECT content FROM files WHERE repo_id = ? AND path = ?").get(context.repoId, path) as any;
+            let result = "File not found or not in cache.";
+            
+            if (file) {
+               // Truncate to avoid context window API limit
+               result = file.content.length > 8000 ? file.content.substring(0, 8000) + "\n...[truncated]" : file.content;
+            } else {
+               const [owner, repo] = context.repoId.split("/");
+               try {
+                 const { data: fileData } = await octokit.rest.repos.getContent({ owner, repo, path }) as any;
+                 const content = Buffer.from(fileData.content, "base64").toString();
+                 result = content.length > 8000 ? content.substring(0, 8000) + "\n...[truncated]" : content;
+               } catch (e) {
+                 result = "Could not fetch file from GitHub API. It may not exist.";
+               }
+            }
+
+            messages.push({
+              role: "tool",
+              content: result,
+              tool_call_id: call.id,
+              name: functionCall.name
+            });
+          } catch (e) {
+            messages.push({
+              role: "tool",
+              content: '{"error": "Failed to execute tool read_file"}',
+              tool_call_id: call.id,
+              name: functionCall?.name || "read_file"
+            });
+          }
+        } else if (functionCall?.name === 'get_commit_history') {
+          try {
+            const args = JSON.parse(functionCall.arguments);
+            const cached = db.prepare("SELECT data FROM repositories WHERE id = ?").get(context.repoId) as any;
+            let result = "No commits found or repository not analyzed.";
+            
+            if (cached) {
+              const rData = JSON.parse(cached.data);
+              const limit = args.limit || 5;
+              result = JSON.stringify((rData.commits || []).slice(0, limit).map((c: any) => ({
+                sha: c.sha, author: c.author, date: c.date, message: c.message
+              })));
+            }
+
+            messages.push({
+              role: "tool",
+              content: result,
+              tool_call_id: call.id,
+              name: functionCall.name
+            });
+          } catch (e) {
+            messages.push({
+              role: "tool",
+              content: '{"error": "Failed to execute tool get_commit_history"}',
+              tool_call_id: call.id,
+              name: functionCall?.name || "get_commit_history"
+            });
+          }
         }
       }
 
@@ -703,10 +808,55 @@ Provide a clear, accurate, and helpful response based on the repository context 
     }
 
     const answer = msg.content || "Sorry, I couldn't generate an answer.";
+    
+    // Save assistant's answer to history
+    const finalCached = db.prepare("SELECT * FROM repositories WHERE id = ?").get(context.repoId) as any;
+    if (finalCached) {
+        let finalData = JSON.parse(finalCached.data);
+        finalData.chatHistory = [...(finalData.chatHistory || []), { role: "assistant", content: answer, timestamp: new Date().toISOString() }];
+        db.prepare("UPDATE repositories SET data = ? WHERE id = ?").run(JSON.stringify(finalData), context.repoId);
+    }
+    
     res.json({ answer });
   } catch (error: any) {
     console.error("AI Chat Error:", error);
     res.status(500).json({ error: error.message || "Failed to generate chat answer" });
+  }
+});
+
+app.get("/api/repo/chat-history", (req, res) => {
+  const { repoId } = req.query;
+  if (!repoId) return res.status(400).json({ error: "Missing repoId" });
+
+  try {
+    const cached = db.prepare("SELECT * FROM repositories WHERE id = ?").get(repoId) as any;
+    if (cached) {
+      const data = JSON.parse(cached.data);
+      res.json({ history: data.chatHistory || [] });
+    } else {
+      res.json({ history: [] });
+    }
+  } catch (error: any) {
+    console.error("Fetch History Error:", error);
+    res.status(500).json({ error: error.message || "Failed to fetch chat history" });
+  }
+});
+
+app.delete("/api/repo/chat-history", (req, res) => {
+  const { repoId } = req.query;
+  if (!repoId) return res.status(400).json({ error: "Missing repoId" });
+
+  try {
+    const cached = db.prepare("SELECT * FROM repositories WHERE id = ?").get(repoId) as any;
+    if (cached) {
+        const data = JSON.parse(cached.data);
+        data.chatHistory = []; // clear the history array
+        db.prepare("UPDATE repositories SET data = ? WHERE id = ?").run(JSON.stringify(data), repoId);
+    }
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error("Delete History Error:", error);
+    res.status(500).json({ error: error.message || "Failed to delete chat history" });
   }
 });
 
