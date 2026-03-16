@@ -51,21 +51,7 @@ const BADGE_ICONS = [
     <Medal key="m" className="w-4 h-4 text-amber-600" />,
 ];
 
-// ─── Circular layout ───────────────────────────────────────────────────────────
-
-function computeCircularPositions(
-    names: string[], cx: number, cy: number, radius: number
-): Record<string, { x: number; y: number }> {
-    const positions: Record<string, { x: number; y: number }> = {};
-    const count = names.length;
-    if (count === 0) return positions;
-    if (count === 1) { positions[names[0]] = { x: cx, y: cy }; return positions; }
-    names.forEach((name, i) => {
-        const angle = (2 * Math.PI * i) / count - Math.PI / 2;
-        positions[name] = { x: cx + radius * Math.cos(angle), y: cy + radius * Math.sin(angle) };
-    });
-    return positions;
-}
+// Removed circular layout function as we use D3 force layout now
 
 // ─── Avatar ────────────────────────────────────────────────────────────────────
 
@@ -295,6 +281,15 @@ function HallOfFame({ contributors, selectedNode, onSelect }: {
 
 // ─── Network Graph (SVG) ───────────────────────────────────────────────────────
 
+import * as d3 from 'd3';
+import { ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
+
+interface D3Node extends d3.SimulationNodeDatum, ContributorNode {}
+type D3Link = d3.SimulationLinkDatum<D3Node> & Omit<NetworkEdge, 'source' | 'target'> & {
+    source: D3Node | string | number;
+    target: D3Node | string | number;
+};
+
 function NetworkGraph({ nodes, edges, selectedNode, selectedEdge, onNodeClick, onEdgeClick }: {
     nodes: ContributorNode[];
     edges: NetworkEdge[];
@@ -304,133 +299,316 @@ function NetworkGraph({ nodes, edges, selectedNode, selectedEdge, onNodeClick, o
     onEdgeClick: (edge: NetworkEdge) => void;
 }) {
     const svgRef = useRef<SVGSVGElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
+    const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
     const [dims, setDims] = useState({ w: 600, h: 500 });
+    const [isFullscreen, setIsFullscreen] = useState(false);
 
     useEffect(() => {
         const obs = new ResizeObserver(e => {
+            if (!e[0]) return;
             const { width, height } = e[0].contentRect;
             setDims({ w: width, h: height });
         });
-        if (svgRef.current?.parentElement) obs.observe(svgRef.current.parentElement);
+        if (containerRef.current) obs.observe(containerRef.current);
         return () => obs.disconnect();
     }, []);
 
-    const cx = dims.w / 2, cy = dims.h / 2;
-    const radius = Math.min(cx, cy) * 0.62;
-    const nodeRadius = Math.max(18, Math.min(32, dims.w / (nodes.length + 5)));
-
-    const positions = useMemo(
-        () => computeCircularPositions(nodes.map(n => n.name), cx, cy, radius),
-        [nodes, cx, cy, radius]
-    );
     const maxEdgeWeight = useMemo(() => Math.max(1, ...edges.map(e => e.weight)), [edges]);
     const maxCommits = useMemo(() => Math.max(1, ...nodes.map(n => n.commitCount)), [nodes]);
 
-    const isNodeHighlighted = (name: string) => {
-        if (selectedEdge) return selectedEdge.source === name || selectedEdge.target === name;
-        if (selectedNode) return selectedNode === name || edges.some(e =>
-            (e.source === selectedNode && e.target === name) ||
-            (e.target === selectedNode && e.source === name)
-        );
-        return true;
-    };
+    // Graph Data
+    const graphData = useMemo(() => {
+        const d3Nodes: D3Node[] = nodes.map(n => ({ ...n }));
+        const d3Links: D3Link[] = edges.map(e => ({
+            ...e, source: e.source, target: e.target
+        }));
+        return { nodes: d3Nodes, links: d3Links };
+    }, [nodes, edges]);
+
+    useEffect(() => {
+        if (!svgRef.current || dims.w === 0 || dims.h === 0 || graphData.nodes.length === 0) return;
+
+        const svg = d3.select(svgRef.current);
+        svg.selectAll('*').remove();
+
+        // Add defs
+        const defs = svg.append('defs');
+        const glow = defs.append('radialGradient')
+            .attr('id', 'nodeGlowGrad')
+            .attr('cx', '50%').attr('cy', '50%').attr('r', '50%');
+        glow.append('stop').attr('offset', '0%').attr('stop-color', '#10b981').attr('stop-opacity', '0.35');
+        glow.append('stop').attr('offset', '100%').attr('stop-color', '#10b981').attr('stop-opacity', '0');
+
+        const g = svg.append('g');
+
+        // Zoom setup
+        const zoom = d3.zoom<SVGSVGElement, unknown>()
+            .scaleExtent([0.1, 4])
+            .on('zoom', (event) => {
+                g.attr('transform', event.transform);
+            });
+        svg.call(zoom);
+        zoomRef.current = zoom;
+
+        // Force simulation
+        const margin = 50;
+        const simulation = d3.forceSimulation<D3Node>(graphData.nodes)
+            .force('link', d3.forceLink<D3Node, D3Link>(graphData.links).id(d => d.name).distance(150))
+            .force('charge', d3.forceManyBody().strength(-800))
+            .force('center', d3.forceCenter(dims.w / 2, dims.h / 2))
+            .force('collision', d3.forceCollide().radius(d => {
+                const s = 0.6 + 0.4 * ((d as D3Node).commitCount / maxCommits);
+                return Math.max(18, Math.min(32, dims.w / (nodes.length + 5))) * s + 20; // Radius + padding
+            }))
+            .force('x', d3.forceX(dims.w / 2).strength(0.05))
+            .force('y', d3.forceY(dims.h / 2).strength(0.05));
+
+        // Let simulation run a bit before rendering to prevent initial jumpiness
+        simulation.tick(30);
+
+        // Render Links
+        const linkGroups = g.append('g')
+            .selectAll('g')
+            .data(graphData.links)
+            .enter().append('g')
+            .attr('class', 'cursor-pointer')
+            .on('click', (event, d) => onEdgeClick({
+                source: (d.source as any).name || d.source,
+                target: (d.target as any).name || d.target,
+                sharedFiles: d.sharedFiles,
+                weight: d.weight
+            }));
+
+        // Invisible wider hit area
+        const hitArea = linkGroups.append('line')
+            .attr('stroke', 'transparent')
+            .attr('stroke-width', 18);
+
+        // Visible line
+        const linkLine = linkGroups.append('line')
+            .attr('class', 'transition-all duration-300')
+            .attr('stroke-linecap', 'round');
+
+        // Render Nodes
+        const nodeRadiusBase = Math.max(18, Math.min(32, dims.w / (nodes.length + 5)));
+        
+        const nodeGroups = g.append('g')
+            .selectAll('g')
+            .data(graphData.nodes)
+            .enter().append('g')
+            .attr('class', 'cursor-pointer')
+            .style('transition', 'opacity 0.3s')
+            .on('click', (event, d) => onNodeClick(d.name))
+            .call(d3.drag<SVGGElement, D3Node>()
+                .on('start', dragstarted)
+                .on('drag', dragged)
+                .on('end', dragended) as any);
+
+        const isNodeHighlighted = (name: string) => {
+            if (selectedEdge) return selectedEdge.source === name || selectedEdge.target === name;
+            if (selectedNode) return selectedNode === name || edges.some(e =>
+                (e.source === selectedNode && e.target === name) ||
+                (e.target === selectedNode && e.source === name)
+            );
+            return true;
+        };
+
+        const updateVisuals = () => {
+            linkLine
+                .attr('stroke', d => {
+                    const isThisEdge = selectedEdge?.source === ((d.source as any).name || d.source) && 
+                                      selectedEdge?.target === ((d.target as any).name || d.target);
+                    const dimmed = selectedNode
+                        ? !(((d.source as any).name || d.source) === selectedNode || ((d.target as any).name || d.target) === selectedNode)
+                        : selectedEdge ? !isThisEdge : false;
+                    return isThisEdge ? '#10b981' : dimmed ? '#1f1f23' : '#3f3f46';
+                })
+                .attr('stroke-width', d => {
+                    const isThisEdge = selectedEdge?.source === ((d.source as any).name || d.source) && 
+                                      selectedEdge?.target === ((d.target as any).name || d.target);
+                    const strokeW = 1.5 + (d.weight / maxEdgeWeight) * 7;
+                    return isThisEdge ? strokeW + 1 : strokeW;
+                })
+                .attr('stroke-opacity', d => {
+                    const isThisEdge = selectedEdge?.source === ((d.source as any).name || d.source) && 
+                                      selectedEdge?.target === ((d.target as any).name || d.target);
+                    const dimmed = selectedNode
+                        ? !(((d.source as any).name || d.source) === selectedNode || ((d.target as any).name || d.target) === selectedNode)
+                        : selectedEdge ? !isThisEdge : false;
+                    return isThisEdge ? 0.9 : dimmed ? 0.2 : 0.55;
+                });
+
+            nodeGroups
+                .style('opacity', d => isNodeHighlighted(d.name) ? 1 : 0.2);
+        };
+        updateVisuals();
+
+        // Node Visuals
+        nodeGroups.each(function(d) {
+            const group = d3.select(this);
+            const isSel = selectedNode === d.name;
+            const s = 0.6 + 0.4 * (d.commitCount / maxCommits);
+            const r = nodeRadiusBase * s;
+
+            if (isSel) {
+                group.append('circle').attr('r', r + 10).attr('fill', 'url(#nodeGlowGrad)');
+            }
+            
+            group.append('circle')
+                .attr('r', r + 3)
+                .attr('fill', isSel ? '#10b981' : '#27272a')
+                .attr('stroke', isSel ? '#10b981' : '#52525b')
+                .attr('stroke-width', isSel ? 2 : 1.5)
+                .attr('class', 'transition-all duration-200');
+
+            // Hardcoded initial Avatar UI inside d3 foreignObject for simplicity and performance
+            // In a fuller react/d3 integration, we'd sync coords back to React, but this works well
+            group.append('foreignObject')
+                .attr('x', -r).attr('y', -r).attr('width', r * 2).attr('height', r * 2)
+                .html(`
+                    <div style="width:100%; height:100%; border-radius:50%; overflow:hidden; display:flex; align-items:center; justify-content:center; background:#27272a; color:white; font-size:${r}px; font-weight:bold;">
+                        ${d.avatarUrl ? `<img src="${d.avatarUrl}" style="width:100%; height:100%; object-fit:cover;" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />` : ''}
+                        <div style="display:${d.avatarUrl ? 'none' : 'flex'}; width:100%; height:100%; align-items:center; justify-content:center;">
+                            ${d.name.split(' ').map(p=>p[0]).join('').toUpperCase().slice(0,2)}
+                        </div>
+                    </div>
+                `);
+
+            group.append('text')
+                .attr('y', r + 14).attr('text-anchor', 'middle')
+                .attr('fill', isSel ? '#10b981' : '#a1a1aa')
+                .attr('font-size', '10px').attr('font-weight', isSel ? '700' : '400')
+                .style('pointer-events', 'none').style('user-select', 'none')
+                .text(d.name.split(' ')[0]);
+
+            group.append('text')
+                .attr('y', r + 25).attr('text-anchor', 'middle')
+                .attr('fill', '#52525b').attr('font-size', '9px')
+                .style('pointer-events', 'none').style('user-select', 'none')
+                .text(`${d.commitCount}c`);
+        });
+
+        simulation.on('tick', () => {
+            // Constrain nodes within bounds to prevent flying off screen initially
+            nodeGroups.attr('transform', d => {
+                const s = 0.6 + 0.4 * (d.commitCount / maxCommits);
+                const r = nodeRadiusBase * s + margin;
+                d.x = Math.max(r, Math.min(dims.w - r, d.x!));
+                d.y = Math.max(r, Math.min(dims.h - r, d.y!));
+                return `translate(${d.x},${d.y})`;
+            });
+
+            hitArea
+                .attr('x1', d => (d.source as any).x)
+                .attr('y1', d => (d.source as any).y)
+                .attr('x2', d => (d.target as any).x)
+                .attr('y2', d => (d.target as any).y);
+
+            linkLine
+                .attr('x1', d => (d.source as any).x)
+                .attr('y1', d => (d.source as any).y)
+                .attr('x2', d => (d.target as any).x)
+                .attr('y2', d => (d.target as any).y);
+        });
+
+        // Add edge badges/labels dynamically on top
+        const edgeLabels = linkGroups.append('g');
+        edgeLabels.each(function(d) {
+            const group = d3.select(this);
+            const isThisEdge = selectedEdge?.source === ((d.source as any).name || d.source) && 
+                              selectedEdge?.target === ((d.target as any).name || d.target);
+            const dimmed = selectedNode
+                ? !(((d.source as any).name || d.source) === selectedNode || ((d.target as any).name || d.target) === selectedNode)
+                : selectedEdge ? !isThisEdge : false;
+
+            if (isThisEdge) {
+                group.append('circle').attr('class', 'badge-bg')
+                    .attr('r', 13).attr('fill', '#09090b')
+                    .attr('stroke', '#10b981').attr('stroke-width', 1).attr('stroke-opacity', 0.6);
+                group.append('text').attr('class', 'badge-text')
+                    .attr('y', 4).attr('text-anchor', 'middle')
+                    .attr('fill', '#10b981').attr('font-size', '9px').attr('font-weight', '700')
+                    .text(d.weight);
+            } else if (!dimmed && d.weight > 0) {
+                group.append('circle').attr('class', 'badge-bg')
+                    .attr('r', 9).attr('fill', '#18181b')
+                    .attr('stroke', '#3f3f46').attr('stroke-width', 0.5);
+                group.append('text').attr('class', 'badge-text')
+                    .attr('y', 3).attr('text-anchor', 'middle')
+                    .attr('fill', '#71717a').attr('font-size', '8px')
+                    .text(d.weight);
+            }
+        });
+
+        simulation.on('tick.labels', () => {
+            edgeLabels.attr('transform', d => {
+                const sx = (d.source as any).x, sy = (d.source as any).y;
+                const tx = (d.target as any).x, ty = (d.target as any).y;
+                return `translate(${(sx + tx)/2}, ${(sy + ty)/2})`;
+            });
+        });
+
+        // Drag functions
+        function dragstarted(event: any, d: any) {
+            if (!event.active) simulation.alphaTarget(0.3).restart();
+            d.fx = d.x; d.fy = d.y;
+        }
+        function dragged(event: any, d: any) {
+            d.fx = event.x; d.fy = event.y;
+        }
+        function dragended(event: any, d: any) {
+            if (!event.active) simulation.alphaTarget(0);
+            d.fx = null; d.fy = null;
+        }
+
+        return () => { simulation.stop(); };
+    }, [graphData, dims, selectedNode, selectedEdge, onNodeClick, onEdgeClick]);
 
     return (
-        <div className="relative w-full h-full">
-            <svg ref={svgRef} className="w-full h-full" viewBox={`0 0 ${dims.w} ${dims.h}`}>
-                <defs>
-                    <radialGradient id="nodeGlowGrad" cx="50%" cy="50%" r="50%">
-                        <stop offset="0%" stopColor="#10b981" stopOpacity="0.35" />
-                        <stop offset="100%" stopColor="#10b981" stopOpacity="0" />
-                    </radialGradient>
-                </defs>
-
-                {/* Edges */}
-                {edges.map((edge, i) => {
-                    const src = positions[edge.source];
-                    const tgt = positions[edge.target];
-                    if (!src || !tgt) return null;
-
-                    const isThisEdge = selectedEdge?.source === edge.source && selectedEdge?.target === edge.target;
-                    const dimmed = selectedNode
-                        ? !(edge.source === selectedNode || edge.target === selectedNode)
-                        : selectedEdge ? !isThisEdge : false;
-                    const strokeW = 1.5 + (edge.weight / maxEdgeWeight) * 7;
-                    const midX = (src.x + tgt.x) / 2;
-                    const midY = (src.y + tgt.y) / 2;
-
-                    return (
-                        <g key={`e-${i}`} className="cursor-pointer" onClick={() => onEdgeClick(edge)}>
-                            {/* Hit area (wider, invisible) */}
-                            <line x1={src.x} y1={src.y} x2={tgt.x} y2={tgt.y}
-                                stroke="transparent" strokeWidth={18} />
-                            {/* Visible line */}
-                            <line x1={src.x} y1={src.y} x2={tgt.x} y2={tgt.y}
-                                stroke={isThisEdge ? '#10b981' : dimmed ? '#1f1f23' : '#3f3f46'}
-                                strokeWidth={isThisEdge ? strokeW + 1 : strokeW}
-                                strokeOpacity={isThisEdge ? 0.9 : dimmed ? 0.2 : 0.55}
-                                strokeLinecap="round"
-                                className="transition-all duration-300"
-                            />
-                            {/* Click hint label on midpoint */}
-                            {isThisEdge && (
-                                <g>
-                                    <circle cx={midX} cy={midY} r={13} fill="#09090b" stroke="#10b981" strokeWidth={1} strokeOpacity={0.6} />
-                                    <text x={midX} y={midY + 4} textAnchor="middle" fill="#10b981" fontSize={9} fontWeight="700">
-                                        {edge.weight}
-                                    </text>
-                                </g>
-                            )}
-                            {/* Small weight badge when not selected */}
-                            {!isThisEdge && !dimmed && edge.weight > 0 && (
-                                <g>
-                                    <circle cx={midX} cy={midY} r={9} fill="#18181b" stroke="#3f3f46" strokeWidth={0.5} />
-                                    <text x={midX} y={midY + 3} textAnchor="middle" fill="#71717a" fontSize={8}>{edge.weight}</text>
-                                </g>
-                            )}
-                        </g>
-                    );
-                })}
-
-                {/* Nodes */}
-                {nodes.map(node => {
-                    const pos = positions[node.name];
-                    if (!pos) return null;
-                    const s = 0.6 + 0.4 * (node.commitCount / maxCommits);
-                    const r = nodeRadius * s;
-                    const isSel = selectedNode === node.name;
-                    const dimmed = !isNodeHighlighted(node.name);
-
-                    return (
-                        <g key={node.name} transform={`translate(${pos.x},${pos.y})`}
-                            className="cursor-pointer"
-                            onClick={() => onNodeClick(node.name)}
-                            style={{ opacity: dimmed ? 0.2 : 1, transition: 'opacity 0.3s' }}>
-                            {isSel && <circle r={r + 10} fill="url(#nodeGlowGrad)" />}
-                            <circle r={r + 3}
-                                fill={isSel ? '#10b981' : '#27272a'}
-                                stroke={isSel ? '#10b981' : '#52525b'}
-                                strokeWidth={isSel ? 2 : 1.5}
-                                className="transition-all duration-200"
-                            />
-                            <foreignObject x={-r} y={-r} width={r * 2} height={r * 2}>
-                                <div className="w-full h-full rounded-full overflow-hidden flex items-center justify-center" style={{ borderRadius: '50%' }}>
-                                    <Avatar name={node.name} url={node.avatarUrl} size={r * 2} />
-                                </div>
-                            </foreignObject>
-                            <text y={r + 14} textAnchor="middle" fill={isSel ? '#10b981' : '#a1a1aa'}
-                                fontSize={10} fontWeight={isSel ? '700' : '400'}
-                                className="pointer-events-none select-none">
-                                {node.name.split(' ')[0]}
-                            </text>
-                            <text y={r + 25} textAnchor="middle" fill="#52525b" fontSize={9}
-                                className="pointer-events-none select-none">
-                                {node.commitCount}c
-                            </text>
-                        </g>
-                    );
-                })}
-            </svg>
+        <div ref={containerRef} className="relative w-full h-full overflow-hidden bg-zinc-950/50">
+            {/* Zoom Controls Overlay */}
+            <div className="absolute top-4 right-4 z-20 flex flex-col gap-2">
+                <button
+                    onClick={() => {
+                        if (svgRef.current && zoomRef.current) {
+                            d3.select(svgRef.current).transition().duration(300).call(zoomRef.current.scaleBy, 1.5);
+                        }
+                    }}
+                    className="p-2.5 bg-zinc-900/80 backdrop-blur-xl border border-white/10 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+                    title="Zoom In"
+                >
+                    <ZoomIn className="w-4 h-4" />
+                </button>
+                <button
+                    onClick={() => {
+                        if (svgRef.current && zoomRef.current) {
+                            d3.select(svgRef.current).transition().duration(300).call(zoomRef.current.scaleBy, 0.67);
+                        }
+                    }}
+                    className="p-2.5 bg-zinc-900/80 backdrop-blur-xl border border-white/10 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+                    title="Zoom Out"
+                >
+                    <ZoomOut className="w-4 h-4" />
+                </button>
+                <button
+                    onClick={() => {
+                        if (!document.fullscreenElement) {
+                            containerRef.current?.requestFullscreen();
+                            setIsFullscreen(true);
+                        } else {
+                            document.exitFullscreen();
+                            setIsFullscreen(false);
+                        }
+                    }}
+                    className="p-2.5 bg-zinc-900/80 backdrop-blur-xl border border-white/10 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+                    title="Toggle Fullscreen"
+                >
+                    <Maximize2 className="w-4 h-4" />
+                </button>
+            </div>
+            
+            <svg ref={svgRef} className="w-full h-full" style={{ cursor: 'grab' }} />
         </div>
     );
 }

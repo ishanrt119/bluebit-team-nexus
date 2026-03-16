@@ -40,13 +40,14 @@ import { DiffViewer } from './components/DiffViewer';
 import { BlameViewer } from './components/BlameViewer';
 import { BranchTree } from './components/BranchTree';
 import { ContributorNetwork } from './components/ContributorNetwork';
+import { CodeHealthDashboard } from './components/CodeHealthDashboard';
 
 export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [repoData, setRepoData] = useState<RepoData | null>(null);
   const [narrative, setNarrative] = useState<RepoNarrative | null>(null);
   const [isCinematicMode, setIsCinematicMode] = useState(false);
-  const [activeTab, setActiveTab] = useState<'analytics' | 'timeline' | 'heatmap' | 'graph' | 'branches' | 'preview' | 'assistant' | 'explorer' | 'contributors'>('analytics');
+  const [activeTab, setActiveTab] = useState<'analytics' | 'timeline' | 'heatmap' | 'graph' | 'branches' | 'preview' | 'assistant' | 'explorer' | 'contributors' | 'health'>('analytics');
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [selectedCommit, setSelectedCommit] = useState<Commit | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -205,7 +206,8 @@ export default function App() {
 
   const fetchDiff = async (sha: string, path: string) => {
     try {
-      const res = await fetch(`/api/repo/diff?repoId=${repoData?.owner}/${repoData?.repoName}&sha=${sha}&path=${path}`);
+      const repoId = `${repoData?.owner}/${repoData?.repoName}`;
+      const res = await fetch(`/api/repo/diff?repoId=${encodeURIComponent(repoId)}&sha=${encodeURIComponent(sha)}&path=${encodeURIComponent(path)}`);
       const data = await res.json();
       setDiffPatch(data.patch);
       setViewMode('diff');
@@ -224,7 +226,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans selection:bg-emerald-500/30">
       {/* Header */}
-      <nav className="border-bottom border-zinc-900 px-6 py-4 flex items-center justify-between backdrop-blur-md bg-zinc-950/50 sticky top-0 z-40">
+      <nav className="border-b border-zinc-900 px-6 py-4 flex items-center justify-between backdrop-blur-md bg-zinc-950/50 sticky top-0 z-40">
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 bg-emerald-600 rounded-lg flex items-center justify-center">
@@ -342,6 +344,7 @@ export default function App() {
                       { id: 'graph', label: 'Network' },
                       { id: 'branches', label: 'Branches' },
                       { id: 'contributors', label: 'Contributors' },
+                      { id: 'health', label: '🩺 Health' },
                       { id: 'preview', label: 'Preview' },
                       { id: 'assistant', label: 'Assistant' },
                       { id: 'explorer', label: 'Explorer' }
@@ -517,6 +520,10 @@ export default function App() {
 
                   {activeTab === 'contributors' && (
                     <ContributorNetwork repoData={repoData} />
+                  )}
+
+                  {activeTab === 'health' && (
+                    <CodeHealthDashboard repoData={repoData} />
                   )}
 
                   {activeTab === 'preview' && (

@@ -23,8 +23,11 @@ interface ForceGraphProps {
 
 export function ForceGraph({ commits, onNodeClick }: ForceGraphProps) {
   const svgRef = useRef<SVGSVGElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [filterAuthor, setFilterAuthor] = useState<string | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const authors = useMemo(() => Array.from(new Set(commits.map(c => c.author))), [commits]);
 
@@ -33,7 +36,7 @@ export function ForceGraph({ commits, onNodeClick }: ForceGraphProps) {
     const links: Link[] = [];
     const fileNodes = new Set<string>();
 
-    const filteredCommits = filterAuthor 
+    const filteredCommits = filterAuthor
       ? commits.filter(c => c.author === filterAuthor)
       : commits.slice(0, 50); // Limit for performance
 
@@ -84,6 +87,7 @@ export function ForceGraph({ commits, onNodeClick }: ForceGraphProps) {
       });
 
     svg.call(zoom);
+    zoomRef.current = zoom;
 
     const simulation = d3.forceSimulation<Node>(graphData.nodes)
       .force('link', d3.forceLink<Node, Link>(graphData.links).id(d => d.id).distance(100))
@@ -162,7 +166,7 @@ export function ForceGraph({ commits, onNodeClick }: ForceGraphProps) {
   }, [graphData, onNodeClick]);
 
   return (
-    <div className="h-[700px] w-full bg-zinc-950 rounded-[2.5rem] border border-white/5 overflow-hidden relative group shadow-2xl">
+    <div ref={containerRef} className="h-[700px] w-full bg-zinc-950 rounded-[2.5rem] border border-white/5 overflow-hidden relative group shadow-2xl">
       <svg ref={svgRef} className="w-full h-full" />
 
       <div className="absolute top-6 left-6 z-20 flex items-center gap-4">
@@ -177,7 +181,7 @@ export function ForceGraph({ commits, onNodeClick }: ForceGraphProps) {
         </div>
 
         <div className="relative">
-          <select 
+          <select
             className="appearance-none bg-zinc-900/50 backdrop-blur-2xl px-6 py-2.5 pr-10 rounded-2xl border border-white/10 text-[11px] font-bold text-zinc-300 outline-none focus:ring-2 focus:ring-blue-500/20 transition-all cursor-pointer hover:bg-zinc-900/80"
             onChange={(e) => setFilterAuthor(e.target.value || null)}
             value={filterAuthor || ''}
@@ -194,13 +198,41 @@ export function ForceGraph({ commits, onNodeClick }: ForceGraphProps) {
       </div>
 
       <div className="absolute top-6 right-6 z-20 flex flex-col gap-2">
-        <button className="p-3 bg-zinc-900/50 backdrop-blur-xl border border-white/10 rounded-2xl text-zinc-400 hover:text-white transition-colors">
+        <button
+          onClick={() => {
+            if (svgRef.current && zoomRef.current) {
+              d3.select(svgRef.current).transition().duration(300).call(zoomRef.current.scaleBy, 1.5);
+            }
+          }}
+          className="p-3 bg-zinc-900/50 backdrop-blur-xl border border-white/10 rounded-2xl text-zinc-400 hover:text-white transition-colors"
+          title="Zoom In"
+        >
           <ZoomIn className="w-4 h-4" />
         </button>
-        <button className="p-3 bg-zinc-900/50 backdrop-blur-xl border border-white/10 rounded-2xl text-zinc-400 hover:text-white transition-colors">
+        <button
+          onClick={() => {
+            if (svgRef.current && zoomRef.current) {
+              d3.select(svgRef.current).transition().duration(300).call(zoomRef.current.scaleBy, 0.67);
+            }
+          }}
+          className="p-3 bg-zinc-900/50 backdrop-blur-xl border border-white/10 rounded-2xl text-zinc-400 hover:text-white transition-colors"
+          title="Zoom Out"
+        >
           <ZoomOut className="w-4 h-4" />
         </button>
-        <button className="p-3 bg-zinc-900/50 backdrop-blur-xl border border-white/10 rounded-2xl text-zinc-400 hover:text-white transition-colors">
+        <button
+          onClick={() => {
+            if (!document.fullscreenElement) {
+              containerRef.current?.requestFullscreen();
+              setIsFullscreen(true);
+            } else {
+              document.exitFullscreen();
+              setIsFullscreen(false);
+            }
+          }}
+          className="p-3 bg-zinc-900/50 backdrop-blur-xl border border-white/10 rounded-2xl text-zinc-400 hover:text-white transition-colors"
+          title="Toggle Fullscreen"
+        >
           <Maximize2 className="w-4 h-4" />
         </button>
       </div>
@@ -220,7 +252,7 @@ export function ForceGraph({ commits, onNodeClick }: ForceGraphProps) {
               )}>
                 {selectedNode.type === 'commit' ? <GitCommit className="w-5 h-5 text-emerald-400" /> : <FileCode className="w-5 h-5 text-blue-400" />}
               </div>
-              <button 
+              <button
                 onClick={() => setSelectedNode(null)}
                 className="text-zinc-500 hover:text-white transition-colors"
               >

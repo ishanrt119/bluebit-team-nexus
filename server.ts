@@ -324,9 +324,17 @@ app.post("/api/analyze", async (req, res) => {
 
     // Basic Metrics
     const contributors: Record<string, number> = {};
+    const fileCounts: Record<string, number> = {};
+
     detailedCommits.forEach((c) => {
       contributors[c.author] = (contributors[c.author] || 0) + 1;
+      const changedFiles = c.filePaths || c.modifiedFiles || [];
+      changedFiles.forEach((f: string) => { fileCounts[f] = (fileCounts[f] || 0) + 1; });
     });
+
+    const totalUniqueFiles = Object.keys(fileCounts).length;
+    const churnedFiles = Object.values(fileCounts).filter(n => n > 1).length;
+    const churnRate = totalUniqueFiles > 0 ? (churnedFiles / totalUniqueFiles) * 100 : 0;
 
     const stats = {
       repoName: repo,
@@ -339,7 +347,7 @@ app.post("/api/analyze", async (req, res) => {
       packageJson,
       coreFiles: coreFiles.filter(Boolean),
       metrics: {
-        churnRate: Math.random() * 100,
+        churnRate,
         refactorCount: detailedCommits.filter(c => c.message.toLowerCase().includes("refactor")).length,
         bugFixes: detailedCommits.filter(c => c.message.toLowerCase().includes("fix")).length,
       }
