@@ -11,11 +11,14 @@ export interface Commit {
   author: string;
   authorLogin?: string;
   authorAvatar?: string;
+  avatarUrl?: string | null;
+  login?: string | null;
   date: string;
   message: string;
   sentiment: 'positive' | 'negative' | 'neutral';
   parentShas?: string[];
   filesChanged?: number;
+  filePaths?: string[];
   insertions?: number;
   deletions?: number;
   isLatest?: boolean;
