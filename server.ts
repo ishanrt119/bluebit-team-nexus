@@ -356,7 +356,7 @@ app.post("/api/analyze", async (req, res) => {
       totalCommits: commits.length,
       contributors: Object.entries(contributors).map(([name, count]) => ({ name, count })),
       commits: detailedCommits,
-      files: files.map(f => f.path),
+      files: files.filter(f => f.type === 'blob').map(f => f.path),
       readme,
       packageJson,
       coreFiles: coreFiles.filter(Boolean),

@@ -59,7 +59,25 @@ export function DirectoryExplorer({ files, onFileSelect, selectedPath }: Directo
     return root;
   };
 
-  const tree = buildTree(files.filter(f => f.toLowerCase().includes(search.toLowerCase())));
+  // Pre-filter: remove paths that are directory entries from the GitHub tree API.
+  // Directory entries have no file extension and are prefixes of other file paths.
+  // This handles cached data from before the server-side fix.
+  const filteredFiles = files.filter(f => {
+    // Filter by search
+    if (search && !f.toLowerCase().includes(search.toLowerCase())) return false;
+    // Check if this path looks like a directory entry:
+    // - The last segment has no file extension
+    // - AND other file paths start with this path + '/' (meaning it's just a directory node)
+    const parts = f.split('/');
+    const lastPart = parts[parts.length - 1];
+    if (!lastPart.includes('.')) {
+      const isPrefix = files.some(other => other !== f && other.startsWith(f + '/'));
+      if (isPrefix) return false; // It's a directory entry — buildTree will create dir nodes from child paths
+    }
+    return true;
+  });
+
+  const tree = buildTree(filteredFiles);
 
   const toggleExpand = (path: string) => {
     setExpanded(prev => ({ ...prev, [path]: !prev[path] }));
