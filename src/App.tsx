@@ -40,6 +40,7 @@ import { BlameViewer } from './components/BlameViewer';
 import { BranchTree } from './components/BranchTree';
 import { ContributorNetwork } from './components/ContributorNetwork';
 import { CodeHealthDashboard } from './components/CodeHealthDashboard';
+import { TopBar } from './components/TopBar';
 
 export default function App() {
   const [isLoading, setIsLoading] = useState(false);
@@ -224,8 +225,10 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans selection:bg-emerald-500/30">
+      {/* Top Bar */}
+      <TopBar />
       {/* Header */}
-      <nav className="border-b border-zinc-900 px-6 py-4 flex items-center justify-between backdrop-blur-md bg-zinc-950/50 sticky top-0 z-40">
+      <nav className="border-b border-zinc-900 px-6 py-4 flex items-center justify-between backdrop-blur-md bg-zinc-950/50 sticky top-[36px] z-40">
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-2">
             <img src="/logo.png" alt="GitInsight AI" className="w-8 h-8 rounded-lg" />
@@ -300,7 +303,7 @@ export default function App() {
 
           <Route path="/dashboard" element={
             repoData ? (
-              <div className="flex h-[calc(100vh-64px)] overflow-hidden">
+              <div className="flex h-[calc(100vh-100px)] overflow-hidden">
                 {/* Left Sidebar: Filters */}
                 <FilterPanel
                   authors={authorsList}
