@@ -26,7 +26,8 @@ db.exec(`
     default_branch TEXT,
     data TEXT,
     narrative TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_analyzed_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
   CREATE TABLE IF NOT EXISTS files (
@@ -132,6 +133,11 @@ app.post("/api/analyze", async (req, res) => {
   if (!url) return res.status(400).json({ error: "URL required" });
 
   try {
+    // Cleanup old cache entries (older than 1 hour)
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    db.prepare("DELETE FROM files WHERE repo_id IN (SELECT id FROM repositories WHERE last_analyzed_at < ?)").run(oneHourAgo);
+    db.prepare("DELETE FROM repositories WHERE last_analyzed_at < ?").run(oneHourAgo);
+
     const match = url.match(/github\.com\/([^/]+)\/([^/.]+)/);
     if (!match) return res.status(400).json({ error: "Invalid GitHub URL" });
 
@@ -141,6 +147,9 @@ app.post("/api/analyze", async (req, res) => {
     // Check cache
     const cached = db.prepare("SELECT * FROM repositories WHERE id = ?").get(repoId) as any;
     if (cached) {
+      // Update last_analyzed_at
+      db.prepare("UPDATE repositories SET last_analyzed_at = CURRENT_TIMESTAMP WHERE id = ?").run(repoId);
+      
       return res.json({
         data: JSON.parse(cached.data),
         narrative: cached.narrative ? JSON.parse(cached.narrative) : null
@@ -369,7 +378,7 @@ app.post("/api/analyze", async (req, res) => {
     };
 
     // Store in DB
-    db.prepare("INSERT OR REPLACE INTO repositories (id, repo_url, name, owner, data) VALUES (?, ?, ?, ?, ?)")
+    db.prepare("INSERT OR REPLACE INTO repositories (id, repo_url, name, owner, data, last_analyzed_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)")
       .run(repoId, url, repo, owner, JSON.stringify(stats));
 
     res.json({ data: stats });

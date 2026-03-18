@@ -240,22 +240,7 @@ export function CinematicTimeline({ commits }: CinematicTimelineProps) {
             />
           ))}
           
-          {/* Connecting Path */}
-          <line>
-            <bufferGeometry>
-              <bufferAttribute
-                attach="attributes-position"
-                count={sortedCommits.length}
-                array={new Float32Array(sortedCommits.flatMap((_, idx) => [
-                  Math.sin(idx * 0.5) * 4, 
-                  Math.cos(idx * 0.5) * 4, 
-                  idx * 5
-                ]))}
-                itemSize={3}
-              />
-            </bufferGeometry>
-            <lineBasicMaterial color="#10b981" transparent opacity={0.2} linewidth={2} />
-          </line>
+
         </group>
       </Canvas>
 
@@ -331,7 +316,7 @@ export function CinematicTimeline({ commits }: CinematicTimelineProps) {
                   </span>
                 </div>
                 
-                <h1 className="text-5xl md:text-7xl font-black text-white tracking-tighter leading-none uppercase italic">
+                <h1 className="text-4xl md:text-5xl lg:text-6xl font-black text-white tracking-tighter leading-tight uppercase italic line-clamp-3 break-words overflow-hidden">
                   {activeCommit.message}
                 </h1>
 
